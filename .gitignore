@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.log
+logs/
+*.db
+settings.json
+build/
+dist/
+*.spec
+installer_output/
