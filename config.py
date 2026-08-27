@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -12,13 +13,25 @@ else:
     BASE_DIR = Path(__file__).parent
 
 # ============================================================
+# ПАПКА ДЛЯ ДАННЫХ (база, лог, настройки)
+# В exe — %APPDATA%\ShipTones, чтобы не мусорить рядом с exe
+# (например, на рабочем столе). При запуске из исходников —
+# как раньше, рядом со скриптами.
+# ============================================================
+if getattr(sys, "frozen", False):
+    DATA_DIR = Path(os.environ.get("APPDATA", BASE_DIR)) / "ShipTones"
+else:
+    DATA_DIR = BASE_DIR
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
+# ============================================================
 # ЛОГИРОВАНИЕ
 # ============================================================
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler(BASE_DIR / "shiptones.log", encoding='utf-8'),
+        logging.FileHandler(DATA_DIR / "shiptones.log", encoding='utf-8'),
         logging.StreamHandler()
     ]
 )
@@ -99,7 +112,7 @@ DEFAULT_SETTINGS = {
     "sync_disk": "",
     "sync_interval_hours": 24,
 }
-SETTINGS_FILE = BASE_DIR / "settings.json"
+SETTINGS_FILE = DATA_DIR / "settings.json"
 
 def load_settings():
     if SETTINGS_FILE.exists():
