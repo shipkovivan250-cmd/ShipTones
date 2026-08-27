@@ -35,6 +35,7 @@ def find_ffmpeg():
     shutil.which возвращает exe → берём os.path.dirname."""
     import glob as _glob
     candidates = [
+        getattr(sys, "_MEIPASS", ""),  # папка, куда PyInstaller распаковывает вшитые файлы (onefile)
         str(BASE_DIR),
         r"C:\ffmpeg\bin",
         r"C:\Program Files\ffmpeg\bin",
