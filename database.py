@@ -2,14 +2,14 @@ import os
 import sqlite3
 from contextlib import contextmanager
 
-from config import BASE_DIR, logger
+from config import DATA_DIR, logger
 
 # ============================================================
 # SQLITE: ИСТОРИЯ (фишка 5) + ПЛЕЙЛИСТЫ (фишки 15/17)
 # ============================================================
 class Database:
     def __init__(self):
-        self.db_path = BASE_DIR / "shiptones.db"
+        self.db_path = DATA_DIR / "shiptones.db"
         self._init_db()
 
     @contextmanager
