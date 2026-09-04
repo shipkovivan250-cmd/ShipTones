@@ -86,8 +86,24 @@
   );
   dropzone.addEventListener("drop", (e) => {
     const text = e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text/plain");
-    if (text) $("url-input").value = text.trim();
+    if (text) {
+      const url = text.trim();
+      $("url-input").value = url;
+      detectAndApplySource(url);
+    }
   });
+
+  async function detectAndApplySource(url) {
+    if (!url) return;
+    try {
+      const detected = await window.pywebview.api.detect_source(url);
+      if (detected && SOURCES[detected] && detected !== currentSource) {
+        currentSource = detected;
+        renderSources();
+      }
+    } catch (e) {}
+  }
+  $("url-input").addEventListener("change", (e) => detectAndApplySource(e.target.value.trim()));
 
   // ---------------- DOWNLOAD FLOW ----------------
   function setDownloading(state) {
@@ -117,9 +133,14 @@
     setDownloading(true);
     $("progress-text").textContent = "Получение информации…";
 
-    const res = await window.pywebview.api.start_download(url, currentMode, currentSource, targetDir, quality);
-    if (res && res.error) {
-      toast(res.error, "error");
+    try {
+      const res = await window.pywebview.api.start_download(url, currentMode, currentSource, targetDir, quality);
+      if (res && res.error) {
+        toast(res.error, "error");
+        setDownloading(false);
+      }
+    } catch (e) {
+      toast("Ошибка запуска загрузки", "error");
       setDownloading(false);
     }
   });
@@ -186,20 +207,30 @@
       case "refresh_playlists":
         if ($("view-playlists").classList.contains("active")) loadPlaylists();
         break;
-      case "done":
+      case "done": {
         setDownloading(false);
-        $("progress-text").textContent = "Готово";
         $("open-folder-btn").disabled = false;
-        toast("Загрузка завершена", "success");
+        if (data && data.canceled) {
+          $("progress-text").textContent = "Отменено";
+          toast("Загрузка остановлена", "default");
+        } else if (data && data.ok) {
+          $("progress-text").textContent = "Готово";
+          toast("Загрузка завершена", "success");
+        } else {
+          $("progress-text").textContent = "Ошибка";
+          toast((data && data.error) || "Загрузка завершена с ошибкой", "error");
+        }
         break;
+      }
     }
   };
 
   // ---------------- HISTORY ----------------
   async function loadHistory() {
     const q = $("history-search").value.trim();
-    const rows = await window.pywebview.api.get_history(q);
     const body = $("history-body");
+    body.innerHTML = `<tr><td colspan="4" class="empty-hint">Загрузка…</td></tr>`;
+    const rows = await window.pywebview.api.get_history(q);
     body.innerHTML = "";
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="4" class="empty-hint">Пока пусто</td></tr>`;
@@ -222,8 +253,9 @@
 
   // ---------------- PLAYLISTS ----------------
   async function loadPlaylists() {
-    const rows = await window.pywebview.api.get_playlists();
     const body = $("playlists-body");
+    body.innerHTML = `<tr><td colspan="5" class="empty-hint">Загрузка…</td></tr>`;
+    const rows = await window.pywebview.api.get_playlists();
     body.innerHTML = "";
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="5" class="empty-hint">Плейлистов пока нет</td></tr>`;
@@ -253,6 +285,7 @@
     );
     body.querySelectorAll("[data-del]").forEach((b) =>
       b.addEventListener("click", async () => {
+        if (!confirm("Удалить плейлист из списка?")) return;
         await window.pywebview.api.delete_playlist(parseInt(b.dataset.del, 10));
         loadPlaylists();
       })
@@ -289,28 +322,32 @@
 
   async function init() {
     const startedAt = Date.now();
-
-    SOURCES = await window.pywebview.api.get_sources();
-    settings = await window.pywebview.api.get_settings();
-    currentSource = settings.source || "youtube";
-    renderSources();
-    bindSettings();
-
-    $("quality-select").value = settings.quality || "192";
-    $("target-dir-input").value = settings.download_dir || "";
-
     const splash = $("splash");
+
+    try {
+      SOURCES = await window.pywebview.api.get_sources();
+      settings = await window.pywebview.api.get_settings();
+      currentSource = settings.source || "youtube";
+      renderSources();
+      bindSettings();
+
+      $("quality-select").value = settings.quality || "192";
+      $("target-dir-input").value = settings.download_dir || "";
+
+      window.pywebview.api.check_internet().then((online) => {
+        const pill = $("net-status");
+        pill.className = "status-pill " + (online ? "online" : "offline");
+        pill.querySelector("span:last-child").textContent = online ? "сеть в порядке" : "нет сети";
+      });
+    } catch (e) {
+      toast("Ошибка инициализации интерфейса", "error");
+    }
+
     const elapsed = Date.now() - startedAt;
     setTimeout(() => {
       splash.classList.add("hidden");
       setTimeout(() => splash.remove(), 300);
     }, Math.max(0, SPLASH_MIN_MS - elapsed));
-
-    window.pywebview.api.check_internet().then((online) => {
-      const pill = $("net-status");
-      pill.className = "status-pill " + (online ? "online" : "offline");
-      pill.querySelector("span:last-child").textContent = online ? "сеть в порядке" : "нет сети";
-    });
   }
 
   window.addEventListener("pywebviewready", init);

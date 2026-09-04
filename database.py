@@ -45,22 +45,34 @@ class Database:
 
     # ---------- ИСТОРИЯ ----------
     def add_track(self, title, artist, source, url, file_path):
+        if not url:
+            return
         from utils import hash_file_fast
         file_hash = hash_file_fast(file_path) or ""
         with self._conn() as conn:
             conn.execute("""
-                INSERT OR REPLACE INTO history
-                (title, artist, source, url, file_path, file_hash)
+                INSERT INTO history (title, artist, source, url, file_path, file_hash)
                 VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(url) DO UPDATE SET
+                    title = excluded.title,
+                    artist = excluded.artist,
+                    source = excluded.source,
+                    file_path = excluded.file_path,
+                    file_hash = excluded.file_hash,
+                    downloaded_at = CURRENT_TIMESTAMP
             """, (title, artist, source, url, file_path, file_hash))
+
+    @staticmethod
+    def _escape_like(value):
+        return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def get_history(self, search=""):
         with self._conn() as conn:
             if search:
-                like = f"%{search}%"
+                like = f"%{self._escape_like(search)}%"
                 return conn.execute("""
                     SELECT title, artist, source, downloaded_at FROM history
-                    WHERE title LIKE ? OR artist LIKE ?
+                    WHERE title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\'
                     ORDER BY downloaded_at DESC LIMIT 200
                 """, (like, like)).fetchall()
             return conn.execute("""
@@ -83,8 +95,12 @@ class Database:
     def save_playlist(self, name, url, source, target_path):
         with self._conn() as conn:
             conn.execute("""
-                INSERT OR REPLACE INTO playlists (name, url, source, target_path)
+                INSERT INTO playlists (name, url, source, target_path)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(url) DO UPDATE SET
+                    name = excluded.name,
+                    source = excluded.source,
+                    target_path = excluded.target_path
             """, (name, url, source, target_path))
 
     def get_playlists(self):

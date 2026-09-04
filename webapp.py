@@ -19,7 +19,7 @@ if sys.platform == "win32":
 
 import webview
 
-from config import BASE_DIR, SOURCES, load_settings, save_settings, logger
+from config import BASE_DIR, SOURCES, detect_source, load_settings, save_settings, logger
 from database import DB
 from downloader import Downloader
 from utils import check_internet, update_ytdlp
@@ -45,7 +45,19 @@ class Api:
     def get_settings(self):
         return self.settings
 
+    def detect_source(self, url):
+        return detect_source(url)
+
     def save_settings(self, settings):
+        if "max_workers" in settings:
+            try:
+                settings["max_workers"] = max(1, min(5, int(settings["max_workers"])))
+            except (TypeError, ValueError):
+                settings.pop("max_workers")
+        if "quality" in settings and settings["quality"] not in ("128", "192", "256", "320"):
+            settings.pop("quality")
+        if "download_dir" in settings and not isinstance(settings["download_dir"], str):
+            settings.pop("download_dir")
         self.settings.update(settings)
         save_settings(self.settings)
 
@@ -123,12 +135,22 @@ class Api:
     def _launch(self, url, mode, source, target_root, quality):
         self._current_target_folder = target_root
         gui_queue = queue.Queue()
-        workers = self.settings.get("max_workers", 3)
-        self._downloader = Downloader(gui_queue, self.settings, max_workers=workers)
-        self._download_thread = threading.Thread(
-            target=self._downloader.download, args=(url, mode, target_root, quality, source), daemon=True)
-        self._download_thread.start()
-        threading.Thread(target=self._pump_queue, args=(gui_queue,), daemon=True).start()
+        try:
+            workers = int(self.settings.get("max_workers", 3))
+        except (TypeError, ValueError):
+            workers = 3
+        workers = max(1, min(5, workers))
+
+        try:
+            self._downloader = Downloader(gui_queue, self.settings, max_workers=workers)
+            self._download_thread = threading.Thread(
+                target=self._downloader.download, args=(url, mode, target_root, quality, source), daemon=True)
+            self._download_thread.start()
+            threading.Thread(target=self._pump_queue, args=(gui_queue,), daemon=True).start()
+        except Exception as e:
+            logger.exception("Failed to start download")
+            self._emit("log", f"❌ Ошибка запуска загрузки: {e}")
+            self._emit("done", {"ok": False, "canceled": False, "error": str(e)})
 
     def cancel_download(self):
         if self._downloader:
@@ -176,6 +198,13 @@ def main():
         background_color=bg,
     )
     api._window = window
+
+    if api.settings.get("auto_update_ytdlp"):
+        def _auto_update():
+            ok, msg = update_ytdlp()
+            logger.info(f"auto_update_ytdlp: ok={ok} msg={msg}")
+        threading.Thread(target=_auto_update, daemon=True).start()
+
     webview.start()
 
 

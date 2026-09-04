@@ -1,4 +1,3 @@
-import glob
 import os
 import re
 import threading
@@ -8,7 +7,7 @@ from datetime import datetime
 
 import yt_dlp
 
-from config import BASE_DIR, HAS_MUTAGEN, HAS_PIL, logger
+from config import DATA_DIR, HAS_MUTAGEN, HAS_PIL, logger
 from database import DB
 from utils import (clean_filename, normalize_url, find_ffmpeg,
                    get_youtube_thumbnail_url, embed_car_friendly_cover)
@@ -29,6 +28,8 @@ class Downloader:
         self.lock = threading.Lock()
         self.stats = {"total": 0, "downloaded": 0, "skipped": 0, "failed": 0, "duplicates": 0}
         self.failed_tracks = []
+        self.downloaded_files = []
+        self.claimed_names = set()
         self.ffmpeg_path = find_ffmpeg()
         self.start_time = None
 
@@ -98,7 +99,7 @@ class Downloader:
     # ============================================================
     # ПАКЕТНАЯ ОБРАБОТКА ТЕГОВ И ОБЛОЖЕК — КАК В РАБОЧЕМ КОДЕ
     # ============================================================
-    def _process_tags_and_covers(self, playlist_dir, info):
+    def _process_tags_and_covers(self, playlist_dir, entries):
         if not HAS_MUTAGEN or not HAS_PIL:
             self._log("⚠️ Mutagen или Pillow не установлены. Пропуск обработки.")
             return
@@ -107,14 +108,16 @@ class Downloader:
 
         video_ids_dict = {}
         info_by_title = {}
-        if info and 'entries' in info:
-            for entry in info['entries']:
-                if entry and entry.get('title') and entry.get('id'):
-                    title_safe = clean_filename(entry['title'])
-                    video_ids_dict[title_safe] = entry['id']
-                    info_by_title[title_safe] = entry
+        for entry in entries or []:
+            if entry and entry.get('title') and entry.get('id'):
+                title_safe = clean_filename(entry['title'])
+                video_ids_dict[title_safe] = entry['id']
+                info_by_title[title_safe] = entry
 
-        mp3_files = glob.glob(os.path.join(playlist_dir, "**", "*.mp3"), recursive=True)
+        # ФИКС: обрабатываем только файлы, скачанные В ЭТОЙ сессии, а не все
+        # mp3 в папке — иначе при каждой загрузке заново перебивались бы теги
+        # и обложки у ранее скачанных треков.
+        mp3_files = list(self.downloaded_files)
 
         cover_success = 0
         tag_success = 0
@@ -160,8 +163,9 @@ class Downloader:
                             audio.tags.add(TDRC(encoding=3, text=ud[:4]))
                     audio.save()
                     tag_success += 1
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.exception(f"Tag error for {mp3_file}")
+                    self._log(f"⚠️ Ошибка тегов: {os.path.basename(mp3_file)} — {str(e)[:50]}")
 
             except Exception as e:
                 self._log(f"⚠️ Ошибка обработки {name}: {str(e)[:50]}")
@@ -229,6 +233,16 @@ class Downloader:
         else:
             final_name = clean_filename(f"{artist} - {title}")
 
+        # ФИКС: два РАЗНЫХ трека могут после очистки имени совпасть —
+        # без этого второй тихо считался бы "уже скачан" и терялся.
+        with self.lock:
+            if final_name in self.claimed_names:
+                base_name, i = final_name, 2
+                while f"{base_name} ({i})" in self.claimed_names:
+                    i += 1
+                final_name = f"{base_name} ({i})"
+            self.claimed_names.add(final_name)
+
         if not track_id and not url:
             with self.lock:
                 self.stats["failed"] += 1
@@ -279,8 +293,13 @@ class Downloader:
         if success:
             with self.lock:
                 self.stats["downloaded"] += 1
+                self.downloaded_files.append(mp3_path)
             self._log(f"✅ Готово: {final_name}")
-            DB.add_track(title, artist, source, url, mp3_path)
+            # ФИКС: в базу пишем канонический URL трека (не пустую строку из
+            # ytsearch-фолбэка) — иначе история и умные дубликаты работают некорректно.
+            final_url = f"https://www.youtube.com/watch?v={track_id}" if (source == "youtube" and track_id) else url
+            if final_url:
+                DB.add_track(title, artist, source, final_url, mp3_path)
             self.gui_queue.put(("track_card", {"title": title, "artist": artist, "source": source}))
         else:
             with self.lock:
@@ -293,16 +312,26 @@ class Downloader:
     # ============================================================
     # ОСНОВНОЙ МЕТОД — МЕХАНИКА РАБОЧЕГО КОДА + ПЛЕЙЛИСТЫ/СТАТУС
     # ============================================================
+    def _finish(self, ok, error=None):
+        self.gui_queue.put(("done", {
+            "ok": ok,
+            "canceled": self.cancel_event.is_set(),
+            "stats": self.stats,
+            "error": error,
+        }))
+
     def download(self, url, mode, target_folder, quality, source="youtube"):
         self.cancel_event.clear()
         self.start_time = time.time()
         with self.lock:
             self.stats = {"total": 0, "downloaded": 0, "skipped": 0, "failed": 0, "duplicates": 0}
             self.failed_tracks = []
+            self.downloaded_files = []
+            self.claimed_names = set()
 
         if not self.ffmpeg_path:
             self._log("❌ FFmpeg не найден!")
-            self.gui_queue.put(("done", None))
+            self._finish(ok=False, error="FFmpeg не найден")
             return
 
         os.makedirs(target_folder, exist_ok=True)
@@ -331,23 +360,27 @@ class Downloader:
 
             if not info:
                 self._log("❌ Не удалось получить информацию")
-                self.gui_queue.put(("done", None))
+                self._finish(ok=False, error="Не удалось получить информацию")
                 return
 
-            if 'entries' in info:
-                entries = info.get('entries') or []
-            else:
-                entries = [info]
+            # ФИКС: сразу материализуем в список — 'entries' у yt-dlp иногда генератор,
+            # а мы читаем его дважды (тут и в _process_tags_and_covers).
+            entries = list(info.get('entries') or []) if 'entries' in info else [info]
 
             # ФИКС: разрешаем треки, у которых есть хотя бы url (VK/Яндекс/закрытые YT)
             valid_entries = [e for e in entries if e and isinstance(e, dict) and (e.get('id') or e.get('url'))]
+
+            # ФИКС: режим "Один трек" должен качать РОВНО один трек, даже если
+            # вставлена ссылка на целый плейлист.
+            if mode != "playlist":
+                valid_entries = valid_entries[:1]
 
             with self.lock:
                 self.stats['total'] = len(valid_entries)
 
             if self.stats['total'] == 0:
                 self._log("⚠ Плейлист пуст")
-                self.gui_queue.put(("done", None))
+                self._finish(ok=False, error="Плейлист пуст")
                 return
 
             playlist_title = info.get('title', 'Загрузки')
@@ -375,11 +408,17 @@ class Downloader:
                     futures.append(executor.submit(self._download_single_track, entry, playlist_dir, quality, source))
 
                 for future in as_completed(futures):
-                    pass
+                    try:
+                        future.result()
+                    except Exception as e:
+                        with self.lock:
+                            self.stats["failed"] += 1
+                        logger.exception("Download worker failed")
+                        self._log(f"❌ Ошибка потока: {e}")
 
-            self._process_tags_and_covers(playlist_dir, info)
+            self._process_tags_and_covers(playlist_dir, valid_entries)
 
-            if mode == "playlist":
+            if mode == "playlist" and not self.cancel_event.is_set():
                 DB.touch_playlist(url)
                 self.gui_queue.put(("refresh_playlists", None))
 
@@ -394,16 +433,18 @@ class Downloader:
                 self._log(f"📁 Папка: {playlist_dir}")
                 self._log("═" * 40)
                 self._save_report(playlist_title, playlist_dir)
+                self._finish(ok=True)
             else:
                 self._log("🛑 ShipTones: ЗАГРУЗКА ПРЕРВАНА")
+                self._finish(ok=True)
 
         except Exception as e:
             self._log(f"❌ Ошибка: {e}")
-        finally:
-            self.gui_queue.put(("done", None))
+            logger.exception("Download failed")
+            self._finish(ok=False, error=str(e))
 
     def _save_report(self, playlist_title, playlist_dir):
-        mp3_files = glob.glob(os.path.join(playlist_dir, "**", "*.mp3"), recursive=True)
+        mp3_files = list(self.downloaded_files)
         stats = self.stats
         lines = [
             f"Плейлист: {playlist_title}",
@@ -423,7 +464,7 @@ class Downloader:
         if self.failed_tracks:
             lines += ["", "❌ Не скачано:"] + [f"  [X] {t} — {e}" for t, e in self.failed_tracks]
 
-        log_dir = BASE_DIR / "logs"
+        log_dir = DATA_DIR / "logs"
         log_dir.mkdir(exist_ok=True)
         filename = log_dir / f"report_{datetime.now():%Y-%m-%d_%H-%M}.txt"
         try:
