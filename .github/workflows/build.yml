@@ -36,9 +36,16 @@ jobs:
           $ffmpegExe = Get-ChildItem -Path ffmpeg_extracted -Recurse -Filter ffmpeg.exe | Select-Object -First 1
           Copy-Item $ffmpegExe.FullName -Destination ffmpeg.exe
 
-      - name: Build EXE (onefile, with bundled ffmpeg)
+      - name: Build EXE (onefile, with bundled ffmpeg and web UI)
+        shell: pwsh
         run: |
-          pyinstaller --onefile --windowed --name ShipTones --add-binary "ffmpeg.exe;." main.py
+          pyinstaller --onefile --windowed --name ShipTones `
+            --add-binary "ffmpeg.exe;." `
+            --add-data "web;web" `
+            --collect-all pywebview `
+            --collect-all pythonnet `
+            --collect-all clr_loader `
+            main.py
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

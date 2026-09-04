@@ -55,12 +55,6 @@ except ImportError:
     HAS_PIL = False
     logger.warning("Pillow не установлен: pip install Pillow")
 
-try:
-    import windnd
-    HAS_DND = True
-except ImportError:
-    HAS_DND = False
-
 # ============================================================
 # ЕДИНАЯ ЦВЕТОВАЯ ПАЛИТРА
 # ============================================================
@@ -99,7 +93,7 @@ def detect_source(url):
 # ============================================================
 DEFAULT_SETTINGS = {
     "quality": "192",
-    "download_disk": "",
+    "download_dir": "",
     "source": "youtube",
     "max_workers": 3,
     "normalize_volume": True,      # фишка 1

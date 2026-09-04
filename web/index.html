@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>ShipTones</title>
+  <link rel="stylesheet" href="style.css" />
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("shiptones-theme");
+        var mode = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        document.documentElement.setAttribute("data-theme", mode);
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+  <div class="splash" id="splash">
+    <div class="splash-logo">S</div>
+    <div class="splash-name">ShipTones</div>
+    <div class="splash-spinner"></div>
+  </div>
+
+  <div class="app-shell">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="logo-mark">S</div>
+        <div class="brand-text">ShipTones<small>Музыка из сети</small></div>
+      </div>
+
+      <div class="nav-group-title">Меню</div>
+      <ul class="nav-list">
+        <li><button class="nav-item active" data-view="download">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Загрузка
+        </button></li>
+        <li><button class="nav-item" data-view="history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8M3 3v5h5M12 7v5l4 2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          История
+        </button></li>
+        <li><button class="nav-item" data-view="playlists">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13M9 9l12-2M6 21a3 3 0 100-6 3 3 0 000 6zm12-2a3 3 0 100-6 3 3 0 000 6z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Плейлисты
+        </button></li>
+        <li><button class="nav-item" data-view="settings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 110-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0019.4 9c.36.13.75.2 1.51.2H21a2 2 0 110 4h-.09a1.65 1.65 0 00-1.51 1z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Настройки
+        </button></li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <div class="ver">ShipTones v4.0</div>
+        <div class="ver">by Ivan Shipkov</div>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <div class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="view-title">Загрузка музыки</h1>
+          <div class="subtitle" id="view-subtitle">Вставь ссылку на трек или плейлист</div>
+        </div>
+        <div class="topbar-actions">
+          <div class="status-pill" id="net-status"><span class="dot"></span><span>проверка сети…</span></div>
+          <button class="icon-btn" id="theme-toggle" title="Тема">
+            <svg id="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.36 6.36l-.7-.7M6.34 6.34l-.7-.7m12.02 0l-.7.7M6.34 17.66l-.7.7M12 8a4 4 0 100 8 4 4 0 000-8z" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <main class="content">
+        <!-- ================= DOWNLOAD VIEW ================= -->
+        <section class="view active" id="view-download">
+          <div class="card" id="dropzone">
+            <div class="card-title">Источник</div>
+            <div class="source-picker" id="source-picker"></div>
+
+            <label class="field-label">Ссылка на трек или плейлист</label>
+            <div class="url-row">
+              <input class="input" id="url-input" placeholder="https://…" />
+            </div>
+            <div class="dropzone-hint">Можно перетащить ссылку прямо сюда</div>
+
+            <label class="field-label" style="margin-top:18px">Папка назначения</label>
+            <div class="url-row">
+              <input class="input" id="target-dir-input" placeholder="Выберите папку для загрузки…" readonly />
+              <button class="btn btn-outline" id="browse-btn">Обзор…</button>
+            </div>
+
+            <div class="field-row" style="margin-top:14px">
+              <div>
+                <label class="field-label">Качество, кбит/с</label>
+                <select class="select" id="quality-select">
+                  <option value="128">128</option>
+                  <option value="192" selected>192</option>
+                  <option value="256">256</option>
+                  <option value="320">320</option>
+                </select>
+              </div>
+              <div>
+                <label class="field-label">Режим</label>
+                <div class="segmented" id="mode-segmented">
+                  <button data-mode="single">Один трек</button>
+                  <button data-mode="playlist" class="active">Плейлист</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="btn-row">
+              <button class="btn btn-primary" id="start-btn">▶ Начать загрузку</button>
+              <button class="btn btn-outline" id="cancel-btn" disabled>■ Стоп</button>
+              <button class="btn btn-outline" id="open-folder-btn" disabled>Открыть папку</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Прогресс</div>
+            <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+            <div class="progress-meta">
+              <span id="progress-text">Ожидание запуска…</span>
+              <span id="progress-eta"></span>
+            </div>
+            <div class="stat-row">
+              <div class="stat-chip ok"><div class="num" id="stat-downloaded">0</div><div class="lbl">скачано</div></div>
+              <div class="stat-chip warn"><div class="num" id="stat-duplicates">0</div><div class="lbl">дубли</div></div>
+              <div class="stat-chip"><div class="num" id="stat-skipped">0</div><div class="lbl">пропущено</div></div>
+              <div class="stat-chip err"><div class="num" id="stat-failed">0</div><div class="lbl">ошибки</div></div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Скачано в этой сессии</div>
+            <div class="track-grid" id="track-grid">
+              <div class="empty-hint">Здесь появятся скачанные треки</div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Лог</div>
+            <div class="log-console" id="log-console"></div>
+          </div>
+        </section>
+
+        <!-- ================= HISTORY VIEW ================= -->
+        <section class="view" id="view-history">
+          <div class="card">
+            <div class="search-input-wrap">
+              <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="9" r="6"/><path d="M17 17l-3.5-3.5" stroke-linecap="round"/></svg>
+              <input class="input" id="history-search" placeholder="Поиск по названию или исполнителю" />
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Трек</th><th>Исполнитель</th><th>Источник</th><th>Дата</th></tr></thead>
+                <tbody id="history-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= PLAYLISTS VIEW ================= -->
+        <section class="view" id="view-playlists">
+          <div class="card">
+            <div class="card-title">Сохранённые плейлисты</div>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>Название</th><th>Источник</th><th>Папка</th><th>Синхр.</th><th></th></tr></thead>
+                <tbody id="playlists-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= SETTINGS VIEW ================= -->
+        <section class="view" id="view-settings">
+          <div class="card">
+            <div class="card-title">Загрузка</div>
+            <div class="switch-row">
+              <div><div class="t">Умные дубликаты</div><div class="d">Не скачивать трек повторно, если файл уже есть на диске</div></div>
+              <label class="switch"><input type="checkbox" id="set-smart-dedup"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+              <div><div class="t">Автокаталогизация</div><div class="d">Раскладывать треки по папкам Исполнитель/Альбом</div></div>
+              <label class="switch"><input type="checkbox" id="set-auto-categorize"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+              <div><div class="t">Расширенные теги</div><div class="d">Альбом, жанр, год и номер трека в ID3</div></div>
+              <label class="switch"><input type="checkbox" id="set-extended-tags"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+              <div><div class="t">Автообновление yt-dlp</div><div class="d">Проверять обновления при запуске</div></div>
+              <label class="switch"><input type="checkbox" id="set-auto-update"><span class="slider"></span></label>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Производительность</div>
+            <label class="field-label">Потоков загрузки одновременно</label>
+            <select class="select" id="set-max-workers" style="max-width:160px">
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="4">4</option>
+              <option value="5">5</option>
+            </select>
+          </div>
+
+          <div class="card">
+            <div class="card-title">Обслуживание</div>
+            <button class="btn btn-outline" id="update-ytdlp-btn">Обновить yt-dlp</button>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="toast-stack" id="toast-stack"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

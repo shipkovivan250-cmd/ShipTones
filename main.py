@@ -6,8 +6,8 @@ from tkinter import messagebox
 from config import BASE_DIR, logger
 
 def main():
-    from gui import App
-    App().mainloop()
+    import webapp
+    webapp.main()
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()

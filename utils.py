@@ -17,6 +17,18 @@ except ImportError:
 # СИСТЕМНЫЕ УТИЛИТЫ
 # ============================================================
 def find_removable_drives():
+    """ФИКС: os.path.exists() на сетевом диске может зависнуть на много секунд,
+    если сеть недоступна. GetLogicalDrives() читает битовую маску из ОС
+    напрямую, не трогая файловую систему — не может зависнуть."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+            drives = [f"{chr(65 + i)}:" for i in range(26) if bitmask & (1 << i)]
+            return drives or ["❌ Флешка не найдена"]
+        except Exception:
+            pass
+
     drives = []
     for letter in string.ascii_uppercase:
         if os.path.exists(f"{letter}:\\"):
