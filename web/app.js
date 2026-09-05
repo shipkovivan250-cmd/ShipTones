@@ -7,7 +7,7 @@
   let currentMode = "playlist";
   let downloading = false;
   let cardCount = 0;
-  let pendingUpdate = null;
+  let appVersion = "";
 
   const $ = (id) => document.getElementById(id);
 
@@ -210,15 +210,15 @@
         if ($("view-playlists").classList.contains("active")) loadPlaylists();
         break;
       case "update_progress": {
-        const btn = $("update-install-btn");
+        const btn = $("check-update-btn");
         btn.textContent = data.stage === "installing" ? "Установка…" : `Загрузка… ${data.percent}%`;
         break;
       }
       case "update_error": {
         toast(`Ошибка обновления: ${data}`, "error");
-        const btn = $("update-install-btn");
+        const btn = $("check-update-btn");
         btn.disabled = false;
-        btn.textContent = "Обновить";
+        btn.textContent = "Проверить обновления";
         break;
       }
       case "done": {
@@ -312,7 +312,6 @@
     $("set-auto-categorize").checked = !!settings.auto_categorize;
     $("set-extended-tags").checked = !!settings.extended_tags;
     $("set-auto-update").checked = !!settings.auto_update_ytdlp;
-    $("set-auto-check-update").checked = settings.auto_check_update !== false;
     $("set-max-workers").value = String(settings.max_workers || 3);
 
     const persist = () => window.pywebview.api.save_settings(settings);
@@ -320,7 +319,6 @@
     $("set-auto-categorize").addEventListener("change", (e) => { settings.auto_categorize = e.target.checked; persist(); });
     $("set-extended-tags").addEventListener("change", (e) => { settings.extended_tags = e.target.checked; persist(); });
     $("set-auto-update").addEventListener("change", (e) => { settings.auto_update_ytdlp = e.target.checked; persist(); });
-    $("set-auto-check-update").addEventListener("change", (e) => { settings.auto_check_update = e.target.checked; persist(); });
     $("set-max-workers").addEventListener("change", (e) => { settings.max_workers = parseInt(e.target.value, 10); persist(); });
   }
 
@@ -333,33 +331,33 @@
     e.target.textContent = "Обновить yt-dlp";
   });
 
-  // ---------------- АВТООБНОВЛЕНИЕ ПРИЛОЖЕНИЯ ----------------
-  function showUpdateBanner(info) {
-    pendingUpdate = info;
-    $("update-banner-text").textContent = `Доступна новая версия ShipTones ${info.version} — нажмите «Обновить», приложение перезапустится само`;
-    $("update-banner").hidden = false;
-  }
-
-  $("update-install-btn").addEventListener("click", async () => {
-    if (!pendingUpdate) return;
-    const btn = $("update-install-btn");
+  // ---------------- ПРОВЕРКА ОБНОВЛЕНИЙ ПРИЛОЖЕНИЯ (по кнопке, как обновление yt-dlp) ----------------
+  $("check-update-btn").addEventListener("click", async () => {
+    const btn = $("check-update-btn");
     btn.disabled = true;
-    btn.textContent = "Загрузка… 0%";
+    btn.textContent = "Проверка…";
     try {
-      const res = await window.pywebview.api.install_update(pendingUpdate.url);
+      const info = await window.pywebview.api.check_for_update();
+      if (!info) {
+        toast(`У вас установлена последняя версия${appVersion ? " (v" + appVersion + ")" : ""}`, "success");
+        btn.disabled = false;
+        btn.textContent = "Проверить обновления";
+        return;
+      }
+      btn.textContent = "Загрузка… 0%";
+      const res = await window.pywebview.api.install_update(info.url);
       if (res && res.error) {
         toast(res.error, "error");
         btn.disabled = false;
-        btn.textContent = "Обновить";
+        btn.textContent = "Проверить обновления";
       }
+      // при успехе приложение перезапустится само — кнопка так и останется в состоянии "Установка…"
     } catch (e) {
-      toast("Не удалось запустить обновление", "error");
+      toast("Не удалось проверить обновления", "error");
       btn.disabled = false;
-      btn.textContent = "Обновить";
+      btn.textContent = "Проверить обновления";
     }
   });
-
-  $("update-dismiss-btn").addEventListener("click", () => { $("update-banner").hidden = true; });
 
   // ---------------- INIT ----------------
   const SPLASH_MIN_MS = 1500;
@@ -385,14 +383,9 @@
       });
 
       window.pywebview.api.get_app_version().then((v) => {
+        appVersion = v;
         $("app-version").textContent = `ShipTones v${v}`;
       });
-
-      if (settings.auto_check_update !== false) {
-        window.pywebview.api.check_for_update().then((info) => {
-          if (info) showUpdateBanner(info);
-        }).catch(() => {});
-      }
     } catch (e) {
       toast("Ошибка инициализации интерфейса", "error");
     }

@@ -112,7 +112,6 @@ DEFAULT_SETTINGS = {
     "auto_categorize": False,      # фишка 8
     "extended_tags": True,         # фишка 9
     "auto_update_ytdlp": True,     # фишка 14
-    "auto_check_update": True,     # автопроверка новой версии ShipTones на GitHub
 }
 SETTINGS_FILE = DATA_DIR / "settings.json"
 

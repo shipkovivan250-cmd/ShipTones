@@ -57,13 +57,6 @@
 
     <!-- MAIN -->
     <div class="main">
-      <div class="update-banner" id="update-banner" hidden>
-        <span id="update-banner-text"></span>
-        <div class="update-banner-actions">
-          <button class="btn btn-sm btn-primary" id="update-install-btn">Обновить</button>
-          <button class="icon-btn" id="update-dismiss-btn" title="Позже">✕</button>
-        </div>
-      </div>
       <header class="topbar">
         <div>
           <h1 id="view-title">Загрузка музыки</h1>
@@ -199,10 +192,6 @@
               <div><div class="t">Автообновление yt-dlp</div><div class="d">Проверять обновления при запуске</div></div>
               <label class="switch"><input type="checkbox" id="set-auto-update"><span class="slider"></span></label>
             </div>
-            <div class="switch-row">
-              <div><div class="t">Автообновление ShipTones</div><div class="d">Проверять новую версию приложения на GitHub при запуске</div></div>
-              <label class="switch"><input type="checkbox" id="set-auto-check-update"><span class="slider"></span></label>
-            </div>
           </div>
 
           <div class="card">
@@ -219,7 +208,10 @@
 
           <div class="card">
             <div class="card-title">Обслуживание</div>
-            <button class="btn btn-outline" id="update-ytdlp-btn">Обновить yt-dlp</button>
+            <div class="btn-row">
+              <button class="btn btn-outline" id="update-ytdlp-btn">Обновить yt-dlp</button>
+              <button class="btn btn-outline" id="check-update-btn">Проверить обновления</button>
+            </div>
           </div>
         </section>
       </main>
