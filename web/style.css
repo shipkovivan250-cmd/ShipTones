@@ -370,6 +370,32 @@ html[data-theme="dark"] .icon-btn:hover { background: rgba(255,255,255,0.04); }
   color: #fff;
 }
 
+.dev-tag {
+  font-weight: 500;
+  opacity: 0.65;
+  font-size: 10px;
+}
+
+/* ---------------- UPDATE BANNER ---------------- */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 24px;
+  background: var(--brand-50);
+  border-bottom: 1px solid var(--brand-100);
+  color: var(--brand-700);
+  font-size: 13px;
+  font-weight: 500;
+}
+html[data-theme="dark"] .update-banner {
+  background: rgba(139, 92, 246, 0.12);
+  border-bottom-color: rgba(139, 92, 246, 0.25);
+  color: var(--brand-300);
+}
+.update-banner-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
 /* ---------------- INPUTS ---------------- */
 .input, .select {
   width: 100%;

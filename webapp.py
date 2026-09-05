@@ -19,10 +19,11 @@ if sys.platform == "win32":
 
 import webview
 
-from config import BASE_DIR, SOURCES, detect_source, load_settings, save_settings, logger
+from config import APP_VERSION, BASE_DIR, SOURCES, detect_source, load_settings, save_settings, logger
 from database import DB
 from downloader import Downloader
 from utils import check_internet, update_ytdlp
+import updater
 
 # ФИКС: в собранном .exe (--onefile) файлы из --add-data распаковываются
 # во временную папку sys._MEIPASS, а не рядом с exe — читаем web/ оттуда.
@@ -44,6 +45,9 @@ class Api:
 
     def get_settings(self):
         return self.settings
+
+    def get_app_version(self):
+        return APP_VERSION
 
     def detect_source(self, url):
         return detect_source(url)
@@ -89,6 +93,33 @@ class Api:
     def update_ytdlp(self):
         ok, msg = update_ytdlp()
         return {"ok": ok, "msg": msg}
+
+    def check_for_update(self):
+        """Вызывается из JS при старте (и по кнопке) — не блокирует ничего,
+        при любой ошибке сети/API просто возвращает None."""
+        return updater.check_for_update()
+
+    def install_update(self, url):
+        if self._is_busy():
+            return {"error": "Дождитесь окончания текущей загрузки"}
+
+        def _run():
+            try:
+                self._emit("update_progress", {"percent": 0, "stage": "download"})
+                path = updater.download_update(
+                    url, on_progress=lambda p: self._emit("update_progress", {"percent": p, "stage": "download"}))
+                self._emit("update_progress", {"percent": 100, "stage": "installing"})
+                updater.apply_update_and_restart(path)
+                if self._window:
+                    self._window.destroy()
+                else:
+                    os._exit(0)
+            except Exception as e:
+                logger.exception("Update failed")
+                self._emit("update_error", str(e))
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"ok": True}
 
     def get_history(self, search=""):
         return [list(row) for row in DB.get_history(search)]

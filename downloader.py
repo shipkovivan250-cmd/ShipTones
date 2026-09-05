@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import yt_dlp
+from yt_dlp.utils import DownloadCancelled
 
 from config import DATA_DIR, HAS_MUTAGEN, HAS_PIL, logger
 from database import DB
@@ -44,6 +45,15 @@ class Downloader:
         with self.lock:
             self.gui_queue.put(("status", {**self.stats, "elapsed": elapsed}))
 
+    def _check_cancel_hook(self, d):
+        """ФИКС (нормальный stop): раньше отмена проверялась только МЕЖДУ файлами —
+        yt-dlp уже начатый файл докачивал до конца, что угодно ни делай. progress_hook
+        вызывается на каждый прогресс-тик (несколько раз в секунду), и если тут
+        поднять DownloadCancelled — yt-dlp прерывает СКАЧИВАНИЕ ЭТОГО ФАЙЛА немедленно
+        и пробрасывает исключение наружу из ydl.download(), а не глотает его."""
+        if self.cancel_event.is_set():
+            raise DownloadCancelled("Отменено пользователем")
+
     def update_progress_bar(self):
         with self.lock:
             completed = (self.stats["downloaded"] + self.stats["failed"] +
@@ -75,6 +85,7 @@ class Downloader:
             'socket_timeout': 15,
             'retries': 2,
             'fragment_retries': 2,
+            'progress_hooks': [self._check_cancel_hook],
         }
         opts['postprocessors'] = [
             {'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': quality},
@@ -191,6 +202,9 @@ class Downloader:
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
                     ydl.download([url_or_query])
+            except DownloadCancelled:
+                # Отмена пользователем — не ошибка, ретраить/логировать как сбой не нужно.
+                break
             except Exception as e:
                 self._log(f"⚠ [{final_name}] {str(e)[:120]}")
                 error_msg = str(e).lower()
@@ -301,6 +315,9 @@ class Downloader:
             if final_url:
                 DB.add_track(title, artist, source, final_url, mp3_path)
             self.gui_queue.put(("track_card", {"title": title, "artist": artist, "source": source}))
+        elif self.cancel_event.is_set():
+            # Прервано пользователем на середине этого трека — это не "ошибка".
+            pass
         else:
             with self.lock:
                 self.stats["failed"] += 1
@@ -321,6 +338,10 @@ class Downloader:
         }))
 
     def download(self, url, mode, target_folder, quality, source="youtube"):
+        """Диспетчер по источнику. КАЖДЫЙ источник — отдельный изолированный метод
+        (_download_youtube/_download_vk/_download_yandex) со своей собственной
+        обработкой ошибок: баг или сбой в недоделанном VK/Яндекс не может
+        затронуть рабочую YouTube-загрузку, и наоборот."""
         self.cancel_event.clear()
         self.start_time = time.time()
         with self.lock:
@@ -329,6 +350,20 @@ class Downloader:
             self.downloaded_files = []
             self.claimed_names = set()
 
+        if source == "youtube":
+            self._download_youtube(url, mode, target_folder, quality)
+        elif source == "vk":
+            self._download_vk(url, mode, target_folder, quality)
+        elif source == "yandex":
+            self._download_yandex(url, mode, target_folder, quality)
+        else:
+            self._log(f"❌ Неизвестный источник: {source}")
+            self._finish(ok=False, error=f"Неизвестный источник: {source}")
+
+    # ============================================================
+    # YOUTUBE — единственный сейчас реально работающий источник, через yt-dlp.
+    # ============================================================
+    def _download_youtube(self, url, mode, target_folder, quality):
         if not self.ffmpeg_path:
             self._log("❌ FFmpeg не найден!")
             self._finish(ok=False, error="FFmpeg не найден")
@@ -395,7 +430,7 @@ class Downloader:
 
             if mode == "playlist":
                 self._log(f"📁 Плейлист: {playlist_title}")
-                DB.save_playlist(playlist_title, url, source, playlist_dir)
+                DB.save_playlist(playlist_title, url, "youtube", playlist_dir)
                 self.gui_queue.put(("refresh_playlists", None))
             self._log(f"🎵 Всего треков: {self.stats['total']}")
             self._log(f" ShipTones: Запуск в {self.max_workers} потока...")
@@ -405,7 +440,7 @@ class Downloader:
                 for entry in valid_entries:
                     if self.cancel_event.is_set():
                         break
-                    futures.append(executor.submit(self._download_single_track, entry, playlist_dir, quality, source))
+                    futures.append(executor.submit(self._download_single_track, entry, playlist_dir, quality, "youtube"))
 
                 for future in as_completed(futures):
                     try:
@@ -442,6 +477,25 @@ class Downloader:
             self._log(f"❌ Ошибка: {e}")
             logger.exception("Download failed")
             self._finish(ok=False, error=str(e))
+
+    # ============================================================
+    # VK МУЗЫКА — в разработке. У yt-dlp нет рабочего экстрактора для VK Музыки
+    # (только для обычного видео VK), а собственная реализация потребовала бы
+    # реверс-инжиниринга приватного API VK с авторизацией — это отдельная
+    # большая задача. Метод полностью изолирован от _download_youtube: что бы
+    # тут ни случилось, на YouTube-загрузку это никак не влияет.
+    # ============================================================
+    def _download_vk(self, url, mode, target_folder, quality):
+        self._log("⚠ VK Музыка пока в разработке — загрузка недоступна.")
+        self._finish(ok=False, error="Источник «VK Музыка» ещё не реализован")
+
+    # ============================================================
+    # ЯНДЕКС МУЗЫКА — в разработке, по тем же причинам, что и VK (см. выше).
+    # Полностью изолирован от остальных источников.
+    # ============================================================
+    def _download_yandex(self, url, mode, target_folder, quality):
+        self._log("⚠ Яндекс Музыка пока в разработке — загрузка недоступна.")
+        self._finish(ok=False, error="Источник «Яндекс Музыка» ещё не реализован")
 
     def _save_report(self, playlist_title, playlist_dir):
         mp3_files = list(self.downloaded_files)
