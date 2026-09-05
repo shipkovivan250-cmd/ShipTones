@@ -1,6 +1,7 @@
 yt-dlp>=2024.1.0
 mutagen>=1.47.0
 Pillow>=10.0.0
+pywebview>=6.0
 
-# Только для Windows — включает поддержку Drag&Drop ссылок в окне (опционально)
-windnd>=1.0.7; sys_platform == "win32"
+# Только для Windows — backend WebView2 для pywebview
+pythonnet>=3.0.0; sys_platform == "win32"

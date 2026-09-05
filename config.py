@@ -55,12 +55,6 @@ except ImportError:
     HAS_PIL = False
     logger.warning("Pillow не установлен: pip install Pillow")
 
-try:
-    import windnd
-    HAS_DND = True
-except ImportError:
-    HAS_DND = False
-
 # ============================================================
 # ЕДИНАЯ ЦВЕТОВАЯ ПАЛИТРА
 # ============================================================
@@ -99,18 +93,13 @@ def detect_source(url):
 # ============================================================
 DEFAULT_SETTINGS = {
     "quality": "192",
-    "download_disk": "",
+    "download_dir": "",
     "source": "youtube",
     "max_workers": 3,
-    "normalize_volume": True,      # фишка 1
-    "remove_silence": True,
     "smart_dedup": True,           # фишка 6
     "auto_categorize": False,      # фишка 8
     "extended_tags": True,         # фишка 9
     "auto_update_ytdlp": True,     # фишка 14
-    "sync_enabled": False,         # фишка 15
-    "sync_disk": "",
-    "sync_interval_hours": 24,
 }
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
@@ -128,4 +117,4 @@ def save_settings(settings):
         with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
             json.dump(settings, f, indent=2, ensure_ascii=False)
     except Exception:
-        pass
+        logger.exception("Failed to save settings")

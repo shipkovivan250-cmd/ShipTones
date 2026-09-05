@@ -17,6 +17,18 @@ except ImportError:
 # СИСТЕМНЫЕ УТИЛИТЫ
 # ============================================================
 def find_removable_drives():
+    """ФИКС: os.path.exists() на сетевом диске может зависнуть на много секунд,
+    если сеть недоступна. GetLogicalDrives() читает битовую маску из ОС
+    напрямую, не трогая файловую систему — не может зависнуть."""
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            bitmask = ctypes.windll.kernel32.GetLogicalDrives()
+            drives = [f"{chr(65 + i)}:" for i in range(26) if bitmask & (1 << i)]
+            return drives or ["❌ Флешка не найдена"]
+        except Exception:
+            pass
+
     drives = []
     for letter in string.ascii_uppercase:
         if os.path.exists(f"{letter}:\\"):
@@ -75,7 +87,7 @@ def clean_filename(name: str, fallback: str = "Unknown Track") -> str:
     if not name:
         return fallback
     cleaned = "".join(c for c in name if c.isalnum() or c in ' _-()[]\'').strip()
-    cleaned = cleaned[:100]
+    cleaned = cleaned[:100].rstrip(" ")
     return cleaned if cleaned else fallback
 
 def normalize_url(url: str) -> str:
@@ -116,11 +128,14 @@ def get_youtube_thumbnail_url(video_id: str) -> str:
     ]
     for url in variants:
         try:
-            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            # ФИКС: HEAD вместо GET — не тянем тело картинки только чтобы узнать её размер.
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'}, method='HEAD')
             with urllib.request.urlopen(req, timeout=5) as response:
-                if response.getheader('Content-Length'):
-                    if int(response.getheader('Content-Length')) > 10000:
-                        return url
+                length = response.getheader('Content-Length')
+                # ФИКС: если сервер не прислал Content-Length, не отбрасываем
+                # картинку молча — она может быть валидной.
+                if length is None or int(length) > 10000:
+                    return url
         except Exception:
             continue
     return f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
@@ -137,8 +152,12 @@ def embed_car_friendly_cover(mp3_path: str, image_url: str) -> bool:
         with urllib.request.urlopen(req, timeout=10) as response:
             img_data = response.read()
 
+        from PIL import ImageOps
+
         img = Image.open(io.BytesIO(img_data)).convert('RGB')
-        img_resized = img.resize((500, 500), Image.Resampling.LANCZOS)
+        # ФИКС: YouTube-превью не квадратные (обычно 16:9) — обычный resize
+        # искажал картинку. ImageOps.fit обрезает по центру, сохраняя пропорции.
+        img_resized = ImageOps.fit(img, (500, 500), Image.Resampling.LANCZOS)
 
         quality = 85
         jpeg_data = b""
