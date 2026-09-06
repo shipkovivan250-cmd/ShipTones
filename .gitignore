@@ -1,47 +1,4 @@
 ```
-# Python
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-venv/
-.env
-.env.local
-.env.*
-
-# Web
-node_modules/
-dist/
-build/
-.npm/
-
-# Logs
-*.log
-
-# Editor
-.vscode/
-.idea/
-*.swp
-*.swo
-*.tmp
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Coverage
-.coverage
-coverage/
-htmlcov/
-
-# Testing
-.pytest_cache/
-.mypy_cache/
-
-# Distribution / packaging
-*.egg-info/
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
+# Build artifacts
+*.spec
 ```
