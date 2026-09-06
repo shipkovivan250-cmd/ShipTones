@@ -1,5 +1,5 @@
 """
-Модуль загрузки с YouTube
+Модуль загрузки с YouTube/YouTube Music
 Использует yt-dlp для извлечения аудио с YouTube и YouTube Music
 """
 
@@ -19,19 +19,19 @@ from utils import clean_filename, normalize_url
 
 class YouTubeDownloader:
     """Загрузчик треков и плейлистов с YouTube/YouTube Music"""
-    
+
     def __init__(self, parent_downloader):
         self.parent = parent_downloader
         self.settings = parent_downloader.settings
         self.ffmpeg_path = parent_downloader.ffmpeg_path
-        
+
     def _log(self, msg):
         self.parent._log(msg)
-        
+
     def _check_cancel_hook(self, d):
         if self.parent.cancel_event.is_set():
             raise DownloadCancelled("Отменено пользователем")
-    
+
     def get_ydl_opts(self, quality, playlist_dir, filename_template):
         """Настройки yt-dlp для YouTube"""
         # Карта кодеков: формат -> (codec, default_quality)
@@ -41,13 +41,13 @@ class YouTubeDownloader:
             "flac": ("flac", "0"),
             "opus": ("libopus", "160"),
         }
-        
+
         selected_format = self.settings.get("format", "aac")
         codec, default_quality = codec_map.get(selected_format, ("aac", "256"))
-        
+
         if not quality:
             quality = self.settings.get("quality", default_quality)
-        
+
         opts = {
             'ignoreerrors': True,
             'quiet': True,
@@ -68,7 +68,7 @@ class YouTubeDownloader:
             'fragment_retries': 2,
             'progress_hooks': [self._check_cancel_hook],
         }
-        
+
         # Настраиваем постпроцессор для выбранного кодека
         opts['postprocessors'] = [
             {'key': 'FFmpegExtractAudio', 'preferredcodec': codec, 'preferredquality': quality},
@@ -80,23 +80,23 @@ class YouTubeDownloader:
         if self.settings.get("normalize_volume"):
             # Точная нормализация EBU R128 как в YouTube Music
             filters.append("loudnorm=I=-14:TP=-1.5:LRA=11")
-            
+
             # Лёгкий бас-буст для лучшего звучания в автомобиле
             filters.append("equalizer=f=60:width_type=o:width=2:g=2")
-            
+
             # Мягкая компрессия для стабильной громкости
             filters.append("acompressor=threshold=-20dB:ratio=2:attack=200:release=1000")
-        
+
         if self.settings.get("remove_silence"):
             filters.append("silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,"
                            "aformat=dblp,areverse,"
                            "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,areverse")
-        
+
         if filters:
             opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-af', ','.join(filters)]}
 
         return opts
-    
+
     def download_track(self, entry, playlist_dir, quality):
         """Скачивание одного трека"""
         if self.parent.cancel_event.is_set():
@@ -184,8 +184,8 @@ class YouTubeDownloader:
             self._log(f"✅ Готово: {final_name}")
             final_url = f"https://www.youtube.com/watch?v={track_id}" if track_id else url
             if final_url:
-                DB.add_track(title, artist, "youtube", final_url, file_path)
-            self.parent.gui_queue.put(("track_card", {"title": title, "artist": artist, "source": "youtube"}))
+                DB.add_track(title, artist, "ytmusic", final_url, file_path)
+            self.parent.gui_queue.put(("track_card", {"title": title, "artist": artist, "source": "ytmusic"}))
         elif self.parent.cancel_event.is_set():
             pass
         else:
@@ -195,11 +195,11 @@ class YouTubeDownloader:
             self._log(f"❌ Ошибка: {final_name}")
 
         self.parent.update_progress_bar()
-    
+
     def _try_download(self, url_or_query, quality, playlist_dir, final_name):
         """Попытка скачать один трек"""
         opts = self.get_ydl_opts(quality, playlist_dir, f"{final_name}.%(ext)s")
-        
+
         # Определение расширения файла
         selected_format = self.settings.get("format", "aac")
         codec_map = {
@@ -246,7 +246,7 @@ class YouTubeDownloader:
                 except Exception:
                     pass
         return False
-    
+
     def download(self, url, mode, target_folder, quality):
         """Основной метод загрузки с YouTube"""
         if not self.ffmpeg_path:
@@ -318,7 +318,7 @@ class YouTubeDownloader:
 
             if mode == "playlist":
                 self._log(f"📁 Плейлист: {playlist_title}")
-                DB.save_playlist(playlist_title, url, "youtube", playlist_dir)
+                DB.save_playlist(playlist_title, url, "ytmusic", playlist_dir)
                 self.parent.gui_queue.put(("refresh_playlists", None))
             self._log(f"🎵 Всего треков: {self.parent.stats['total']}")
             self._log(f" ShipTones: Запуск в {self.parent.max_workers} потока...")

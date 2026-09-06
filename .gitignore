@@ -1,18 +1,4 @@
 ```
-# Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-
-# Logs
-*.log
-
-# Database
-*.db
-
-# Environment
-.env
-.env.local
-.env.*
 ```

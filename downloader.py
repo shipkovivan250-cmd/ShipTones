@@ -282,10 +282,10 @@ class Downloader:
             "error": error,
         }))
 
-    def download(self, url, mode, target_folder, quality, source="youtube"):
+    def download(self, url, mode, target_folder, quality, source="ytmusic"):
         """Диспетчер по источнику. КАЖДЫЙ источник — отдельный изолированный модуль
         в папке sources/ со своей собственной обработкой ошибок: баг или сбой в 
-        недоделанном VK/Яндекс не может затронуть рабочую YouTube-загрузку."""
+        недоделанном VK/Яндекс не может затронуть рабочую YouTube Music-загрузку."""
         self.cancel_event.clear()
         self.start_time = time.time()
         with self.lock:
