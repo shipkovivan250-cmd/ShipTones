@@ -5,3 +5,10 @@ pywebview>=6.0
 
 # Только для Windows — backend WebView2 для pywebview
 pythonnet>=3.0.0; sys_platform == "win32"
+
+# Для Linux
+pygobject>=3.42.0; sys_platform == "linux"
+
+# Для macOS
+pyobjc-framework-Cocoa>=9.0.0; sys_platform == "darwin"
+pyobjc-framework-WebKit>=9.0.0; sys_platform == "darwin"
