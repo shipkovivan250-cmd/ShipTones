@@ -81,11 +81,11 @@ GITHUB_REPO = "shipkovivan250-cmd/ShipTones"
 # color — фон активной кнопки, fg — цвет текста на ней
 # in_dev — источник объявлен, но реальная загрузка ещё не реализована
 # (см. downloader.py: каждый источник — отдельный изолированный метод,
-# чтобы недоделанные VK/Яндекс не могли сломать рабочий YouTube)
+# чтобы недоделанные VK/Яндекс не могли сломать рабочий YouTube Music)
 # ============================================================
 SOURCES = {
-    "youtube": {"name": "YouTube", "icon": "▶", "color": "#FF0000", "fg": "#ffffff",
-                "url_patterns": ["youtube.com", "youtu.be", "music.youtube.com"], "in_dev": False},
+    "ytmusic": {"name": "YouTube Music", "icon": "🎵", "color": "#FF0000", "fg": "#ffffff",
+                "url_patterns": ["music.youtube.com"], "in_dev": False},
     "vk": {"name": "VK Музыка", "icon": "●", "color": "#4680C2", "fg": "#ffffff",
            "url_patterns": ["vk.com", "m.vk.com"], "in_dev": True},
     "yandex": {"name": "Яндекс Музыка", "icon": "◉", "color": "#FFCC00", "fg": "#000000",
@@ -98,13 +98,14 @@ def detect_source(url):
         for p in src["url_patterns"]:
             if p in u:
                 return key
-    return "youtube"
+    return "ytmusic"  # По умолчанию YouTube Music
 
 # ============================================================
 # НАСТРОЙКИ
 # ============================================================
 DEFAULT_SETTINGS = {
-    "quality": "192",
+    "quality": "256",
+    "format": "aac",  # mp3, aac, flac, opus
     "download_dir": "",
     "source": "youtube",
     "max_workers": 3,
@@ -112,6 +113,8 @@ DEFAULT_SETTINGS = {
     "auto_categorize": False,      # фишка 8
     "extended_tags": True,         # фишка 9
     "auto_update_ytdlp": True,     # фишка 14
+    "normalize_volume": True,      # нормализация -14 LUFS как YouTube Music
+    "remove_silence": False,       # удаление тишины
 }
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
