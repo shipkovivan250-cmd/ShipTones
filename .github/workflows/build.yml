@@ -1,8 +1,10 @@
-name: Build EXE
+name: Build ShipTones for Windows
 
 on:
   workflow_dispatch:        # запустить вручную кнопкой в вкладке Actions
   push:
+    tags:
+      - 'v*'                 # Авто-релиз при создании тега v1.0.0, v2.3.1 и т.д.
     branches: [ "main" ]
     paths:
       - "**.py"
@@ -20,7 +22,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
       - name: Install Python dependencies
         run: |
@@ -42,13 +44,39 @@ jobs:
           pyinstaller --onefile --windowed --name ShipTones `
             --add-binary "ffmpeg.exe;." `
             --add-data "web;web" `
+            --hidden-import=yt_dlp `
+            --hidden-import=mutagen `
+            --hidden-import=PIL `
+            --hidden-import=mutagen.mp3 `
+            --hidden-import=mutagen.mp4 `
+            --hidden-import=mutagen.flac `
+            --hidden-import=mutagen.ogg `
             --collect-all pywebview `
             --collect-all pythonnet `
             --collect-all clr_loader `
+            --clean `
+            --noconfirm `
             main.py
+
+      - name: Create Releases directory
+        run: mkdir -p Releases
+
+      - name: Copy executable to Releases
+        run: copy dist\ShipTones.exe Releases\ShipTones.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ShipTones-exe
-          path: dist/ShipTones.exe
+          name: ShipTones-Windows
+          path: Releases/ShipTones.exe
+
+      - name: Create GitHub Release (auto on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: Releases/ShipTones.exe
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
