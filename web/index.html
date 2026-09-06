@@ -91,11 +91,20 @@
 
             <div class="field-row" style="margin-top:14px">
               <div>
+                <label class="field-label">Формат</label>
+                <select class="select" id="format-select">
+                  <option value="aac" selected>AAC (.m4a)</option>
+                  <option value="mp3">MP3 (.mp3)</option>
+                  <option value="flac">FLAC (.flac)</option>
+                  <option value="opus">Opus (.opus)</option>
+                </select>
+              </div>
+              <div>
                 <label class="field-label">Качество, кбит/с</label>
                 <select class="select" id="quality-select">
                   <option value="128">128</option>
-                  <option value="192" selected>192</option>
-                  <option value="256">256</option>
+                  <option value="192">192</option>
+                  <option value="256" selected>256</option>
                   <option value="320">320</option>
                 </select>
               </div>

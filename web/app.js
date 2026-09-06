@@ -21,6 +21,38 @@
     applyTheme(cur === "dark" ? "light" : "dark");
   });
 
+  // ---------------- FORMAT & QUALITY LINKING ----------------
+  const FORMAT_QUALITY_MAP = {
+    "aac": { default: "256", options: ["128", "192", "256", "320"] },
+    "mp3": { default: "320", options: ["128", "192", "256", "320"] },
+    "flac": { default: "0", options: ["0"] },
+    "opus": { default: "160", options: ["96", "128", "160", "192"] }
+  };
+
+  function updateQualityOptions(format) {
+    const qualitySelect = $("quality-select");
+    const config = FORMAT_QUALITY_MAP[format] || FORMAT_QUALITY_MAP["aac"];
+    const currentValue = qualitySelect.value;
+    
+    let newValue = config.options.includes(currentValue) ? currentValue : config.default;
+    
+    qualitySelect.innerHTML = "";
+    config.options.forEach(q => {
+      const opt = document.createElement("option");
+      opt.value = q;
+      opt.textContent = q === "0" ? "Lossless" : q;
+      qualitySelect.appendChild(opt);
+    });
+    
+    qualitySelect.value = newValue;
+  }
+
+  $("format-select").addEventListener("change", (e) => {
+    updateQualityOptions(e.target.value);
+    settings.format = e.target.value;
+    window.pywebview.api.save_settings(settings);
+  });
+
   // ---------------- NAVIGATION ----------------
   const VIEW_META = {
     download: ["Загрузка музыки", "Вставь ссылку на трек или плейлист"],
@@ -120,8 +152,10 @@
     const targetDir = $("target-dir-input").value.trim();
     if (!targetDir) { toast("Выберите папку назначения", "error"); return; }
 
+    const format = $("format-select").value;
     const quality = $("quality-select").value;
     settings.download_dir = targetDir;
+    settings.format = format;
     settings.quality = quality;
     settings.source = currentSource;
     window.pywebview.api.save_settings(settings);
@@ -373,7 +407,9 @@
       renderSources();
       bindSettings();
 
-      $("quality-select").value = settings.quality || "192";
+      $("format-select").value = settings.format || "aac";
+      updateQualityOptions(settings.format || "aac");
+      $("quality-select").value = settings.quality || "256";
       $("target-dir-input").value = settings.download_dir || "";
 
       window.pywebview.api.check_internet().then((online) => {

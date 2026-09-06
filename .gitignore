@@ -1,18 +1,47 @@
-```gitignore
-# Logs and temp files
-*.log
-*.tmp
-*.swp
-
-# Environment
+```
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
 .env
 .env.local
 .env.*
 
-# Editors
+# Web
+node_modules/
+dist/
+build/
+.npm/
+
+# Logs
+*.log
+
+# Editor
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
 
-# Original rules preserved
-*.log
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+.coverage
+coverage/
+htmlcov/
+
+# Testing
+.pytest_cache/
+.mypy_cache/
+
+# Distribution / packaging
+*.egg-info/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
 ```

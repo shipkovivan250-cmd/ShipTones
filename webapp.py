@@ -58,8 +58,10 @@ class Api:
                 settings["max_workers"] = max(1, min(5, int(settings["max_workers"])))
             except (TypeError, ValueError):
                 settings.pop("max_workers")
-        if "quality" in settings and settings["quality"] not in ("128", "192", "256", "320"):
+        if "quality" in settings and settings["quality"] not in ("0", "96", "128", "160", "192", "256", "320"):
             settings.pop("quality")
+        if "format" in settings and settings["format"] not in ("mp3", "aac", "flac", "opus"):
+            settings.pop("format")
         if "download_dir" in settings and not isinstance(settings["download_dir"], str):
             settings.pop("download_dir")
         self.settings.update(settings)
@@ -159,7 +161,7 @@ class Api:
         if not target_path:
             return {"error": "У плейлиста нет папки назначения"}
         root = str(Path(target_path).parent)
-        quality = self.settings.get("quality", "192")
+        quality = self.settings.get("quality", "256")
         self._launch(url, "playlist", source, root, quality)
         return {"ok": True}
 
