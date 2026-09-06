@@ -104,7 +104,8 @@ def detect_source(url):
 # НАСТРОЙКИ
 # ============================================================
 DEFAULT_SETTINGS = {
-    "quality": "192",
+    "quality": "256",
+    "format": "aac",  # mp3, aac, flac, opus
     "download_dir": "",
     "source": "youtube",
     "max_workers": 3,
@@ -112,6 +113,8 @@ DEFAULT_SETTINGS = {
     "auto_categorize": False,      # фишка 8
     "extended_tags": True,         # фишка 9
     "auto_update_ytdlp": True,     # фишка 14
+    "normalize_volume": True,      # нормализация -14 LUFS как YouTube Music
+    "remove_silence": False,       # удаление тишины
 }
 SETTINGS_FILE = DATA_DIR / "settings.json"
 

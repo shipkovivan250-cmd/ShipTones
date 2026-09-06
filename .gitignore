@@ -1,11 +1,18 @@
+```
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+
+# Logs
 *.log
-logs/
+
+# Database
 *.db
-settings.json
-build/
-dist/
-*.spec
-installer_output/
-.claude/
+
+# Environment
+.env
+.env.local
+.env.*
+```
