@@ -105,30 +105,44 @@ class Downloader:
         }
         
         # Настраиваем постпроцессор для выбранного кодека
-        opts['postprocessors'] = [
-            {'key': 'FFmpegExtractAudio', 'preferredcodec': codec, 'preferredquality': quality},
-            {'key': 'FFmpegMetadata'},
-        ]
-
-        # Нормализация громкости как в YouTube Music (-14 LUFS)
-        filters = []
-        if self.settings.get("normalize_volume"):
-            # Точная нормализация EBU R128 как в YouTube Music
-            filters.append("loudnorm=I=-14:TP=-1.5:LRA=11")
+        # Для FLAC не используем перекодирование - скачиваем как есть
+        if selected_format == "flac":
+            opts['postprocessors'] = [
+                {'key': 'FFmpegExtractAudio', 'preferredcodec': 'flac', 'preferredquality': '0'},
+                {'key': 'FFmpegMetadata'},
+            ]
+            # Для FLAC не применяем нормализацию чтобы сохранить исходное качество
+            opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-vn']}
+        else:
+            # Для AAC/MP3/Opus используем нормализацию только если включена в настройках
+            filters = []
             
-            # Лёгкий бас-буст для лучшего звучания в автомобиле
-            filters.append("equalizer=f=60:width_type=o:width=2:g=2")
+            if self.settings.get("normalize_volume"):
+                # Точная нормализация EBU R128 как в YouTube Music (-14 LUFS)
+                # Используем однократное перекодирование с применением всех фильтров
+                filters.append(f"loudnorm=I=-14:TP=-1.5:LRA=11")
             
-            # Мягкая компрессия для стабильной громкости
-            filters.append("acompressor=threshold=-20dB:ratio=2:attack=200:release=1000")
-        
-        if self.settings.get("remove_silence"):
-            filters.append("silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,"
-                           "aformat=dblp,areverse,"
-                           "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,areverse")
-        
-        if filters:
-            opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-af', ','.join(filters)]}
+            # Добавляем фильтры только если они явно включены
+            if self.settings.get("bass_boost", False):
+                filters.append("equalizer=f=60:width_type=o:width=2:g=2")
+            
+            if self.settings.get("compression", False):
+                filters.append("acompressor=threshold=-20dB:ratio=2:attack=200:release=1000")
+            
+            if self.settings.get("remove_silence", False):
+                filters.append("silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,aformat=dblp,areverse,silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,areverse")
+            
+            opts['postprocessors'] = [
+                {'key': 'FFmpegExtractAudio', 'preferredcodec': codec, 'preferredquality': str(quality)},
+                {'key': 'FFmpegMetadata'},
+            ]
+            
+            if filters:
+                # Применяем все фильтры за один проход перекодирования
+                opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-af', ','.join(filters)]}
+            else:
+                # Без фильтров - просто конвертация в целевой формат
+                opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-vn']}
 
         return opts
 

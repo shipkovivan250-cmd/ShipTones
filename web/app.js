@@ -347,6 +347,10 @@
     $("set-extended-tags").checked = !!settings.extended_tags;
     $("set-auto-update").checked = !!settings.auto_update_ytdlp;
     $("set-max-workers").value = String(settings.max_workers || 3);
+    $("set-normalize-volume").checked = !!settings.normalize_volume;
+    $("set-bass-boost").checked = !!settings.bass_boost;
+    $("set-compression").checked = !!settings.compression;
+    $("set-remove-silence").checked = !!settings.remove_silence;
 
     const persist = () => window.pywebview.api.save_settings(settings);
     $("set-smart-dedup").addEventListener("change", (e) => { settings.smart_dedup = e.target.checked; persist(); });
@@ -354,6 +358,10 @@
     $("set-extended-tags").addEventListener("change", (e) => { settings.extended_tags = e.target.checked; persist(); });
     $("set-auto-update").addEventListener("change", (e) => { settings.auto_update_ytdlp = e.target.checked; persist(); });
     $("set-max-workers").addEventListener("change", (e) => { settings.max_workers = parseInt(e.target.value, 10); persist(); });
+    $("set-normalize-volume").addEventListener("change", (e) => { settings.normalize_volume = e.target.checked; persist(); });
+    $("set-bass-boost").addEventListener("change", (e) => { settings.bass_boost = e.target.checked; persist(); });
+    $("set-compression").addEventListener("change", (e) => { settings.compression = e.target.checked; persist(); });
+    $("set-remove-silence").addEventListener("change", (e) => { settings.remove_silence = e.target.checked; persist(); });
   }
 
   $("update-ytdlp-btn").addEventListener("click", async (e) => {

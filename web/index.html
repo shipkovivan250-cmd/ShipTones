@@ -216,6 +216,30 @@
           </div>
 
           <div class="card">
+            <div class="card-title">Обработка аудио</div>
+            <div class="switch-row">
+              <div><div class="t">Нормализация громкости</div><div class="d">Привести громкость к стандарту -14 LUFS (как в YouTube Music)</div></div>
+              <label class="switch"><input type="checkbox" id="set-normalize-volume"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+              <div><div class="t">Бас-буст</div><div class="d">Усилить низкие частоты (60 Гц, +2 dB) для автомобиля</div></div>
+              <label class="switch"><input type="checkbox" id="set-bass-boost"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+              <div><div class="t">Компрессия</div><div class="d">Сгладить перепады громкости для стабильного звучания</div></div>
+              <label class="switch"><input type="checkbox" id="set-compression"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
+              <div><div class="t">Удаление тишины</div><div class="d">Обрезать тишину в начале и конце трека</div></div>
+              <label class="switch"><input type="checkbox" id="set-remove-silence"><span class="slider"></span></label>
+            </div>
+            <div class="hint" style="margin-top:12px;color:#a7a7a7;font-size:13px">
+              ⚠️ Фильтры применяются только к форматам с перекодированием (AAC/MP3/Opus). 
+              FLAC скачивается без обработки для сохранения исходного качества.
+            </div>
+          </div>
+
+          <div class="card">
             <div class="card-title">Обслуживание</div>
             <div class="btn-row">
               <button class="btn btn-outline" id="update-ytdlp-btn">Обновить yt-dlp</button>

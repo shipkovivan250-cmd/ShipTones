@@ -107,13 +107,15 @@ DEFAULT_SETTINGS = {
     "quality": "256",
     "format": "aac",  # mp3, aac, flac, opus
     "download_dir": "",
-    "source": "youtube",
+    "source": "ytmusic",
     "max_workers": 3,
     "smart_dedup": True,           # фишка 6
     "auto_categorize": False,      # фишка 8
     "extended_tags": True,         # фишка 9
     "auto_update_ytdlp": True,     # фишка 14
-    "normalize_volume": True,      # нормализация -14 LUFS как YouTube Music
+    "normalize_volume": False,     # нормализация -14 LUFS как YouTube Music (по умолчанию выкл для чистого качества)
+    "bass_boost": False,           # бас-буст 60 Гц +2 dB
+    "compression": False,          # компрессия динамики
     "remove_silence": False,       # удаление тишины
 }
 SETTINGS_FILE = DATA_DIR / "settings.json"
