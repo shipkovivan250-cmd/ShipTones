@@ -1,0 +1,245 @@
+import json
+import os
+import queue
+import sys
+import threading
+from pathlib import Path
+
+if sys.platform == "win32":
+    # ФИКС: без этого Windows рендерит окно в заниженном DPI и растягивает
+    # картинкой — скруглённые углы (переключатели, карточки) становятся зубчатыми.
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(1)  # PROCESS_SYSTEM_DPI_AWARE
+    except Exception:
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:
+            pass
+
+import webview
+
+from config import APP_VERSION, BASE_DIR, SOURCES, detect_source, load_settings, save_settings, logger
+from database import DB
+from downloader import Downloader
+from utils import check_internet, update_ytdlp
+import updater
+
+# ФИКС: в собранном .exe (--onefile) файлы из --add-data распаковываются
+# во временную папку sys._MEIPASS, а не рядом с exe — читаем web/ оттуда.
+WEB_DIR = Path(getattr(sys, "_MEIPASS", BASE_DIR)) / "web"
+
+
+class Api:
+    def __init__(self):
+        self._window = None
+        self.settings = load_settings()
+        self._downloader = None
+        self._download_thread = None
+        self._current_target_folder = None
+
+    # ---------------- lookups ----------------
+    def get_sources(self):
+        return {k: {"name": v["name"], "icon": v["icon"], "color": v["color"], "fg": v["fg"]}
+                for k, v in SOURCES.items()}
+
+    def get_settings(self):
+        return self.settings
+
+    def get_app_version(self):
+        return APP_VERSION
+
+    def detect_source(self, url):
+        return detect_source(url)
+
+    def save_settings(self, settings):
+        if "max_workers" in settings:
+            try:
+                settings["max_workers"] = max(1, min(5, int(settings["max_workers"])))
+            except (TypeError, ValueError):
+                settings.pop("max_workers")
+        if "quality" in settings and settings["quality"] not in ("0", "96", "128", "160", "192", "256", "320"):
+            settings.pop("quality")
+        if "format" in settings and settings["format"] not in ("mp3", "aac", "flac", "opus"):
+            settings.pop("format")
+        if "download_dir" in settings and not isinstance(settings["download_dir"], str):
+            settings.pop("download_dir")
+        self.settings.update(settings)
+        save_settings(self.settings)
+
+    def pick_folder(self):
+        start_dir = self.settings.get("download_dir") or ""
+        if not start_dir or not os.path.isdir(start_dir):
+            start_dir = os.path.expanduser("~")
+
+        holder = {}
+
+        def _do():
+            holder["result"] = self._window.create_file_dialog(webview.FileDialog.FOLDER, directory=start_dir)
+
+        if sys.platform == "win32" and self._window is not None and self._window.native is not None:
+            # ФИКС: create_file_dialog в pywebview не переключается на UI-поток сама
+            # (в отличие от evaluate_js) — наши API-методы всегда идут в фоновом потоке,
+            # поэтому диалог зависает/падает с COM-ошибкой. Переключаемся вручную.
+            from System import Action
+            self._window.native.Invoke(Action(_do))
+        else:
+            _do()
+
+        result = holder.get("result")
+        return result[0] if result else None
+
+    def check_internet(self):
+        return check_internet()
+
+    def update_ytdlp(self):
+        ok, msg = update_ytdlp()
+        return {"ok": ok, "msg": msg}
+
+    def check_for_update(self):
+        """Вызывается из JS при старте (и по кнопке) — не блокирует ничего,
+        при любой ошибке сети/API просто возвращает None."""
+        return updater.check_for_update()
+
+    def install_update(self, url):
+        if self._is_busy():
+            return {"error": "Дождитесь окончания текущей загрузки"}
+
+        def _run():
+            try:
+                self._emit("update_progress", {"percent": 0, "stage": "download"})
+                path = updater.download_update(
+                    url, on_progress=lambda p: self._emit("update_progress", {"percent": p, "stage": "download"}))
+                self._emit("update_progress", {"percent": 100, "stage": "installing"})
+                updater.apply_update_and_restart(path)
+                if self._window:
+                    self._window.destroy()
+                else:
+                    os._exit(0)
+            except Exception as e:
+                logger.exception("Update failed")
+                self._emit("update_error", str(e))
+
+        threading.Thread(target=_run, daemon=True).start()
+        return {"ok": True}
+
+    def get_history(self, search=""):
+        return [list(row) for row in DB.get_history(search)]
+
+    def get_playlists(self):
+        return [list(row) for row in DB.get_playlists()]
+
+    def delete_playlist(self, playlist_id):
+        DB.delete_playlist(playlist_id)
+
+    def open_current_folder(self):
+        if self._current_target_folder and os.path.exists(self._current_target_folder):
+            os.startfile(self._current_target_folder)
+
+    # ---------------- downloads ----------------
+    def _is_busy(self):
+        return bool(self._download_thread and self._download_thread.is_alive())
+
+    def start_download(self, url, mode, source, target_dir, quality):
+        if self._is_busy():
+            return {"error": "Загрузка уже идёт"}
+        if not url:
+            return {"error": "Введите ссылку"}
+        if not target_dir or not os.path.isdir(target_dir):
+            return {"error": "Папка назначения недоступна"}
+
+        self._launch(url, mode, source, target_dir, quality)
+        return {"ok": True}
+
+    def sync_playlist(self, playlist_id):
+        if self._is_busy():
+            return {"error": "Загрузка уже идёт"}
+        row = next((p for p in DB.get_playlists() if p[0] == playlist_id), None)
+        if not row:
+            return {"error": "Плейлист не найден"}
+        _, name, url, source, target_path, _ = row
+        if not target_path:
+            return {"error": "У плейлиста нет папки назначения"}
+        root = str(Path(target_path).parent)
+        quality = self.settings.get("quality", "256")
+        self._launch(url, "playlist", source, root, quality)
+        return {"ok": True}
+
+    def _launch(self, url, mode, source, target_root, quality):
+        self._current_target_folder = target_root
+        gui_queue = queue.Queue()
+        try:
+            workers = int(self.settings.get("max_workers", 3))
+        except (TypeError, ValueError):
+            workers = 3
+        workers = max(1, min(5, workers))
+
+        try:
+            self._downloader = Downloader(gui_queue, self.settings, max_workers=workers)
+            self._download_thread = threading.Thread(
+                target=self._downloader.download, args=(url, mode, target_root, quality, source), daemon=True)
+            self._download_thread.start()
+            threading.Thread(target=self._pump_queue, args=(gui_queue,), daemon=True).start()
+        except Exception as e:
+            logger.exception("Failed to start download")
+            self._emit("log", f"❌ Ошибка запуска загрузки: {e}")
+            self._emit("done", {"ok": False, "canceled": False, "error": str(e)})
+
+    def cancel_download(self):
+        if self._downloader:
+            self._downloader.stop()
+
+    def _pump_queue(self, gui_queue):
+        while True:
+            kind, payload = gui_queue.get()
+            self._emit(kind, payload)
+            if kind == "done":
+                break
+
+    def _emit(self, kind, payload):
+        if not self._window:
+            return
+        try:
+            self._window.evaluate_js(f"window.onEvent({json.dumps(kind)}, {json.dumps(payload)})")
+        except Exception as e:
+            logger.error(f"evaluate_js failed: {e}")
+
+
+def _system_prefers_dark():
+    if sys.platform != "win32":
+        return False
+    try:
+        import winreg
+        key = winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize")
+        value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return value == 0
+    except Exception:
+        return False
+
+
+def main():
+    # ФИКС: окно рисует свой фон ДО того, как наш JS успевает применить тему —
+    # подбираем цвет фона под системную тему заранее, чтобы не было белой вспышки.
+    bg = "#0a0a0b" if _system_prefers_dark() else "#f9fafb"
+
+    api = Api()
+    window = webview.create_window(
+        "ShipTones", url=str(WEB_DIR / "index.html"),
+        js_api=api, width=1180, height=780, min_size=(960, 640),
+        background_color=bg,
+    )
+    api._window = window
+
+    if api.settings.get("auto_update_ytdlp"):
+        def _auto_update():
+            ok, msg = update_ytdlp()
+            logger.info(f"auto_update_ytdlp: ok={ok} msg={msg}")
+        threading.Thread(target=_auto_update, daemon=True).start()
+
+    webview.start()
+
+
+if __name__ == "__main__":
+    main()
