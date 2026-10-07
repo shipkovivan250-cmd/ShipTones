@@ -32,21 +32,36 @@ class YouTubeDownloader:
         if self.parent.cancel_event.is_set():
             raise DownloadCancelled("Отменено пользователем")
 
-    def get_ydl_opts(self, quality, playlist_dir, filename_template):
-        """Настройки yt-dlp для YouTube"""
-        # Карта кодеков: формат -> (codec, default_quality)
-        codec_map = {
-            "mp3": ("mp3", "320"),
-            "aac": ("aac", "256"),
-            "flac": ("flac", "0"),
-            "opus": ("libopus", "160"),
-        }
+    # Карта форматов: формат -> (codec, качество по умолчанию, расширение файла)
+    CODEC_MAP = {
+        "mp3": ("mp3", "320", "mp3"),
+        "aac": ("aac", "256", "m4a"),
+        "flac": ("flac", "0", "flac"),
+        "opus": ("libopus", "160", "opus"),
+    }
 
+    @classmethod
+    def target_extension(cls, settings):
+        """Расширение итогового файла для выбранного формата"""
+        fmt = settings.get("format", "aac")
+        return cls.CODEC_MAP.get(fmt, cls.CODEC_MAP["aac"])[2]
+
+    def get_ydl_opts(self, quality, playlist_dir, filename_template):
+        """Настройки yt-dlp для YouTube/YouTube Music.
+
+        Ключевые принципы качества:
+        - скачиваем лучшее аудио (WebM/Opus с YouTube ~128-160 kbps);
+        - НЕ применяем никакие audio-фильтры (нормализацию/бас/компрессию)
+          без явного запроса пользователя — они ухудшают звук;
+        - FLAC не имеет смысла из lossy-источника, поэтому автоматически
+          сохраняется оригинальный Opus без перекодирования (lossless).
+        """
         selected_format = self.settings.get("format", "aac")
-        codec, default_quality = codec_map.get(selected_format, ("aac", "256"))
+        codec, default_quality, _ext = self.CODEC_MAP.get(
+            selected_format, self.CODEC_MAP["aac"])
 
         if not quality:
-            quality = self.settings.get("quality", default_quality)
+            quality = str(self.settings.get("quality", default_quality)) or default_quality
 
         opts = {
             'ignoreerrors': True,
@@ -69,31 +84,35 @@ class YouTubeDownloader:
             'progress_hooks': [self._check_cancel_hook],
         }
 
-        # Настраиваем постпроцессор для выбранного кодека
+        # FLAC из lossy-источника бессмысленно: сохраняем оригинальный
+        # поток (Opus/WebM) БЕЗ перекодирования — максимальное качество.
+        if selected_format == "flac":
+            return opts
+
         opts['postprocessors'] = [
-            {'key': 'FFmpegExtractAudio', 'preferredcodec': codec, 'preferredquality': quality},
+            {'key': 'FFmpegExtractAudio', 'preferredcodec': codec,
+             'preferredquality': str(quality)},
             {'key': 'FFmpegMetadata'},
         ]
 
-        # Нормализация громкости как в YouTube Music (-14 LUFS)
+        # Опциональные audio-фильтры применяются ТОЛЬКО если явно включены.
+        # По умолчанию выключены, чтобы не портить исходное качество.
         filters = []
         if self.settings.get("normalize_volume"):
-            # Точная нормализация EBU R128 как в YouTube Music
             filters.append("loudnorm=I=-14:TP=-1.5:LRA=11")
-
-            # Лёгкий бас-буст для лучшего звучания в автомобиле
+        if self.settings.get("bass_boost"):
             filters.append("equalizer=f=60:width_type=o:width=2:g=2")
-
-            # Мягкая компрессия для стабильной громкости
+        if self.settings.get("compression"):
             filters.append("acompressor=threshold=-20dB:ratio=2:attack=200:release=1000")
-
         if self.settings.get("remove_silence"):
             filters.append("silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,"
                            "aformat=dblp,areverse,"
                            "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,areverse")
 
+        args = ['-vn']  # не переносим видео-поток (обложку) при извлечении
         if filters:
-            opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-af', ','.join(filters)]}
+            args += ['-af', ','.join(filters)]
+        opts['postprocessor_args'] = {'FFmpegExtractAudio': args}
 
         return opts
 
@@ -145,15 +164,10 @@ class YouTubeDownloader:
                                       clean_filename(album) if album else "Unknown Album")
             os.makedirs(target_dir, exist_ok=True)
 
-        # Определение расширения файла
-        selected_format = self.settings.get("format", "aac")
-        codec_map = {
-            "mp3": "mp3",
-            "aac": "m4a",
-            "flac": "flac",
-            "opus": "opus",
-        }
-        file_ext = codec_map.get(selected_format, "m4a")
+        # Определение расширения итогового файла (для "flac" — оригинальный webm)
+        file_ext = self.target_extension(self.settings)
+        if self.settings.get("format", "aac") == "flac":
+            file_ext = "webm"
         file_path = os.path.join(target_dir, f"{final_name}.{file_ext}")
 
         if os.path.exists(file_path) and os.path.getsize(file_path) > 1024:
@@ -200,15 +214,10 @@ class YouTubeDownloader:
         """Попытка скачать один трек"""
         opts = self.get_ydl_opts(quality, playlist_dir, f"{final_name}.%(ext)s")
 
-        # Определение расширения файла
-        selected_format = self.settings.get("format", "aac")
-        codec_map = {
-            "mp3": "mp3",
-            "aac": "m4a",
-            "flac": "flac",
-            "opus": "opus",
-        }
-        file_ext = codec_map.get(selected_format, "m4a")
+        # Определение расширения итогового файла (для "flac" — оригинальный webm)
+        file_ext = self.target_extension(self.settings)
+        if self.settings.get("format", "aac") == "flac":
+            file_ext = "webm"
         file_path = os.path.join(playlist_dir, f"{final_name}.{file_ext}")
 
         url_or_query = normalize_url(url_or_query)

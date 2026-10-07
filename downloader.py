@@ -65,86 +65,10 @@ class Downloader:
         self._update_status()
 
     # ============================================================
-    # ОПЦИИ YT-DLP — ДОСЛОВНО КАК В РАБОЧЕМ КОДЕ
+    # ОПЦИИ YT-DLP — находятся в sources/youtube_source.py
+    # (get_ydl_opts). Здесь только общий код ядра: статус, прогресс,
+    # теги/обложки, отчёты и диспетчер источников.
     # ============================================================
-    def get_base_ydl_opts(self, quality, playlist_dir, filename_template):
-        # Карта кодеков: формат -> (codec, default_quality)
-        codec_map = {
-            "mp3": ("mp3", "320"),
-            "aac": ("aac", "256"),
-            "flac": ("flac", "0"),
-            "opus": ("libopus", "160"),
-        }
-        
-        selected_format = self.settings.get("format", "aac")
-        codec, default_quality = codec_map.get(selected_format, ("aac", "256"))
-        
-        # Если качество не указано в вызове, используем дефолтное для формата
-        if not quality:
-            quality = self.settings.get("quality", default_quality)
-        
-        opts = {
-            'ignoreerrors': True,
-            'quiet': True,
-            'no_warnings': True,
-            'rm_cached_metadata': True,
-            'ffmpeg_location': self.ffmpeg_path,
-            'format': 'bestaudio/best',
-            'outtmpl': os.path.join(playlist_dir, filename_template),
-            'writethumbnail': False,
-            'extractor_args': {
-                'youtube': {
-                    'player_client': ['web', 'android', 'tv'],
-                    'skip': ['dash', 'hls']
-                }
-            },
-            'socket_timeout': 15,
-            'retries': 2,
-            'fragment_retries': 2,
-            'progress_hooks': [self._check_cancel_hook],
-        }
-        
-        # Настраиваем постпроцессор для выбранного кодека
-        # Для FLAC не используем перекодирование - скачиваем как есть
-        if selected_format == "flac":
-            opts['postprocessors'] = [
-                {'key': 'FFmpegExtractAudio', 'preferredcodec': 'flac', 'preferredquality': '0'},
-                {'key': 'FFmpegMetadata'},
-            ]
-            # Для FLAC не применяем нормализацию чтобы сохранить исходное качество
-            opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-vn']}
-        else:
-            # Для AAC/MP3/Opus используем нормализацию только если включена в настройках
-            filters = []
-            
-            if self.settings.get("normalize_volume"):
-                # Точная нормализация EBU R128 как в YouTube Music (-14 LUFS)
-                # Используем однократное перекодирование с применением всех фильтров
-                filters.append(f"loudnorm=I=-14:TP=-1.5:LRA=11")
-            
-            # Добавляем фильтры только если они явно включены
-            if self.settings.get("bass_boost", False):
-                filters.append("equalizer=f=60:width_type=o:width=2:g=2")
-            
-            if self.settings.get("compression", False):
-                filters.append("acompressor=threshold=-20dB:ratio=2:attack=200:release=1000")
-            
-            if self.settings.get("remove_silence", False):
-                filters.append("silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,aformat=dblp,areverse,silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB:detection=peak,areverse")
-            
-            opts['postprocessors'] = [
-                {'key': 'FFmpegExtractAudio', 'preferredcodec': codec, 'preferredquality': str(quality)},
-                {'key': 'FFmpegMetadata'},
-            ]
-            
-            if filters:
-                # Применяем все фильтры за один проход перекодирования
-                opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-af', ','.join(filters)]}
-            else:
-                # Без фильтров - просто конвертация в целевой формат
-                opts['postprocessor_args'] = {'FFmpegExtractAudio': ['-vn']}
-
-        return opts
 
     # ============================================================
     # ПАКЕТНАЯ ОБРАБОТКА ТЕГОВ И ОБЛОЖЕК — КАК В РАБОЧЕМ КОДЕ
