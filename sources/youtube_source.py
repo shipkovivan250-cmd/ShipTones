@@ -274,7 +274,10 @@ class YouTubeDownloader:
                 'quiet': True,
                 'no_warnings': True,
                 'extract_flat': 'in_playlist',
-                'playlistend': 1 if mode == "single" else 0,
+                # ФИКС плейлистов: playlistend=0 yt-dlp трактует как конец
+                # выборки на индексе 0 (срез "1:0" → пусто). "Без ограничения"
+                # — это None; 1 оставляем только для режима "Один трек".
+                'playlistend': 1 if mode == "single" else None,
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['web', 'android', 'tv'],
@@ -291,19 +294,20 @@ class YouTubeDownloader:
                 self.parent._finish(ok=False, error="Не удалось получить информацию")
                 return
 
-            entries = []
-            if mode == "single":
-                if info.get('ie_key') == 'YoutubePlaylist':
-                    entries = info.get('entries', [])[:1]
-                else:
-                    entries = [info]
-            else:
-                if info.get('ie_key') == 'YoutubePlaylist':
-                    entries = list(info.get('entries', []))
-                else:
-                    entries = [info]
+            # ФИКС плейлистов: ie_key у YouTube-плейлистов равен 'YoutubeTab',
+            # а не 'YoutubePlaylist' — проверка 'YoutubePlaylist' никогда не
+            # срабатывала, плейлист не раскрывался и качался как один
+            # псевдотрек. Механика как в работавшей v1.1.0: раскрываем по
+            # наличию 'entries', "Один трек" отрезаем в Python.
+            entries = list(info.get('entries') or []) if 'entries' in info else [info]
 
-            valid_entries = [e for e in entries if e and (e.get('id') or e.get('url'))]
+            valid_entries = [e for e in entries
+                             if e and isinstance(e, dict) and (e.get('id') or e.get('url'))]
+
+            if mode == "single":
+                # Режим "Один трек" качает РОВНО один трек, даже если вставлена
+                # ссылка на целый плейлист.
+                valid_entries = valid_entries[:1]
 
             if not valid_entries:
                 self._log("❌ Нет доступных треков")
