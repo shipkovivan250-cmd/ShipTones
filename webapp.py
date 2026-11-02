@@ -5,6 +5,8 @@ import sys
 import threading
 from pathlib import Path
 
+from utils import open_folder
+
 if sys.platform == "win32":
     # ФИКС: без этого Windows рендерит окно в заниженном DPI и растягивает
     # картинкой — скруглённые углы (переключатели, карточки) становятся зубчатыми.
@@ -40,7 +42,8 @@ class Api:
 
     # ---------------- lookups ----------------
     def get_sources(self):
-        return {k: {"name": v["name"], "icon": v["icon"], "color": v["color"], "fg": v["fg"]}
+        return {k: {"name": v["name"], "icon": v["icon"], "color": v["color"], "fg": v["fg"],
+                    "in_dev": bool(v.get("in_dev"))}
                 for k, v in SOURCES.items()}
 
     def get_settings(self):
@@ -133,8 +136,7 @@ class Api:
         DB.delete_playlist(playlist_id)
 
     def open_current_folder(self):
-        if self._current_target_folder and os.path.exists(self._current_target_folder):
-            os.startfile(self._current_target_folder)
+        open_folder(self._current_target_folder)
 
     # ---------------- downloads ----------------
     def _is_busy(self):
@@ -145,6 +147,8 @@ class Api:
             return {"error": "Загрузка уже идёт"}
         if not url:
             return {"error": "Введите ссылку"}
+        if SOURCES.get(source, {}).get("in_dev"):
+            return {"error": "Этот источник ещё в разработке"}
         if not target_dir or not os.path.isdir(target_dir):
             return {"error": "Папка назначения недоступна"}
 
@@ -192,6 +196,8 @@ class Api:
     def _pump_queue(self, gui_queue):
         while True:
             kind, payload = gui_queue.get()
+            if kind == "done" and isinstance(payload, dict) and payload.get("folder"):
+                self._current_target_folder = payload["folder"]
             self._emit(kind, payload)
             if kind == "done":
                 break

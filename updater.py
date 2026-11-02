@@ -52,7 +52,7 @@ def check_for_update(timeout=8):
         return None
 
 
-def download_update(url, on_progress=None, timeout=15):
+def download_update(url, on_progress=None, timeout=300):
     """Скачивает exe новой версии во временный файл и возвращает путь к нему."""
     fd, dest = tempfile.mkstemp(prefix="ShipTones_update_", suffix=".exe")
     os.close(fd)
@@ -95,11 +95,15 @@ def apply_update_and_restart(new_exe_path):
     # освободится (процесс мог не успеть закрыться за 1-2 секунды на медленной машине).
     script = (
         "@echo off\r\n"
+        "setlocal EnableDelayedExpansion\r\n"
         f'set "NEWFILE={new_exe_path}"\r\n'
         f'set "OLDFILE={current_exe}"\r\n'
+        "set RETRIES=0\r\n"
         ":retry\r\n"
         'move /y "%NEWFILE%" "%OLDFILE%" >nul 2>&1\r\n'
         'if exist "%NEWFILE%" (\r\n'
+        "  set /a RETRIES+=1\r\n"
+        "  if !RETRIES! GEQ 60 exit /b 1\r\n"
         "  timeout /t 1 /nobreak >nul\r\n"
         "  goto retry\r\n"
         ")\r\n"

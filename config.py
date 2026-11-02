@@ -19,7 +19,13 @@ else:
 # как раньше, рядом со скриптами.
 # ============================================================
 if getattr(sys, "frozen", False):
-    DATA_DIR = Path(os.environ.get("APPDATA", BASE_DIR)) / "ShipTones"
+    if sys.platform == "win32":
+        DATA_DIR = Path(os.environ.get("APPDATA", str(BASE_DIR))) / "ShipTones"
+    elif sys.platform == "darwin":
+        DATA_DIR = Path.home() / "Library" / "Application Support" / "ShipTones"
+    else:
+        xdg = os.environ.get("XDG_CONFIG_HOME")
+        DATA_DIR = (Path(xdg) if xdg else Path.home() / ".config") / "shiptones"
 else:
     DATA_DIR = BASE_DIR
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -85,7 +91,7 @@ GITHUB_REPO = "shipkovivan250-cmd/ShipTones"
 # ============================================================
 SOURCES = {
     "ytmusic": {"name": "YouTube Music", "icon": "🎵", "color": "#FF0000", "fg": "#ffffff",
-                "url_patterns": ["music.youtube.com"], "in_dev": False},
+                "url_patterns": ["music.youtube.com", "youtube.com", "youtu.be"], "in_dev": False},
     "vk": {"name": "VK Музыка", "icon": "●", "color": "#4680C2", "fg": "#ffffff",
            "url_patterns": ["vk.com", "m.vk.com"], "in_dev": True},
     "yandex": {"name": "Яндекс Музыка", "icon": "◉", "color": "#FFCC00", "fg": "#000000",
@@ -124,7 +130,11 @@ def load_settings():
     if SETTINGS_FILE.exists():
         try:
             with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
-                return {**DEFAULT_SETTINGS, **json.load(f)}
+                loaded = json.load(f)
+            merged = {**DEFAULT_SETTINGS, **loaded}
+            if merged.get("source") in ("youtube", "yt"):
+                merged["source"] = "ytmusic"
+            return merged
         except Exception:
             pass
     return DEFAULT_SETTINGS.copy()

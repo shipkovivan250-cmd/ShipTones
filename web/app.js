@@ -3,7 +3,7 @@
 
   let SOURCES = {};
   let settings = {};
-  let currentSource = "youtube";
+  let currentSource = "ytmusic";
   let currentMode = "playlist";
   let downloading = false;
   let cardCount = 0;
@@ -96,7 +96,11 @@
       btn.style.color = key === currentSource ? src.fg : "";
       const devTag = src.in_dev ? ' <small class="dev-tag">в разработке</small>' : "";
       btn.innerHTML = `<span class="dot" style="background:${key === currentSource ? src.fg : src.color}"></span>${src.name}${devTag}`;
-      btn.addEventListener("click", () => { currentSource = key; renderSources(); });
+      btn.addEventListener("click", () => {
+        currentSource = key;
+        renderSources();
+        if (src.in_dev) toast("Этот источник ещё в разработке", "default");
+      });
       wrap.appendChild(btn);
     });
   }
@@ -149,6 +153,10 @@
   $("start-btn").addEventListener("click", async () => {
     const url = $("url-input").value.trim();
     if (!url) { toast("Введите ссылку", "error"); return; }
+    if (SOURCES[currentSource] && SOURCES[currentSource].in_dev) {
+      toast("Этот источник ещё в разработке", "error");
+      return;
+    }
     const targetDir = $("target-dir-input").value.trim();
     if (!targetDir) { toast("Выберите папку назначения", "error"); return; }
 
@@ -411,7 +419,7 @@
     try {
       SOURCES = await window.pywebview.api.get_sources();
       settings = await window.pywebview.api.get_settings();
-      currentSource = settings.source || "youtube";
+      currentSource = (settings.source && SOURCES[settings.source]) ? settings.source : "ytmusic";
       renderSources();
       bindSettings();
 
