@@ -1,7 +1,6 @@
 import os
 import sqlite3
 from contextlib import contextmanager
-from pathlib import Path
 
 from config import DATA_DIR, logger
 
@@ -9,10 +8,8 @@ from config import DATA_DIR, logger
 # SQLITE: ИСТОРИЯ (фишка 5) + ПЛЕЙЛИСТЫ (фишки 15/17)
 # ============================================================
 class Database:
-    def __init__(self, db_path=None):
-        # db_path позволяет переопределить местонахождение БД:
-        # на Android — приватная директория приложения, в тестах — временный файл.
-        self.db_path = Path(db_path) if db_path else DATA_DIR / "shiptones.db"
+    def __init__(self):
+        self.db_path = DATA_DIR / "shiptones.db"
         self._init_db()
 
     @contextmanager
