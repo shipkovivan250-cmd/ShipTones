@@ -25,9 +25,11 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 34
-          target: android-34
-          build-tools: 34.0.0
+          cmdline-tools-version: 13.0
+          accept-android-sdk-licenses: true
+
+      - name: Create local.properties
+        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
