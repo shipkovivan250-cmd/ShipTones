@@ -25,24 +25,23 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 34
-          target: android-34
-          build-tools: 34.0.0
+          cmdline-tools-version: 13.0
+          accept-android-sdk-licenses: true
+
+      - name: Create local.properties
+        run: echo "sdk.dir=${{ env.ANDROID_SDK_ROOT }}" > android/local.properties
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Generate Gradle wrapper
-        run: cd android && gradle wrapper
-
       - name: Lint
-        run: cd android && ./gradlew lint
+        run: cd android && gradle lint
 
       - name: Unit tests
-        run: cd android && ./gradlew testDebugUnitTest
+        run: cd android && gradle testDebugUnitTest
 
       - name: Assemble Debug APK
-        run: cd android && ./gradlew assembleDebug
+        run: cd android && gradle assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
