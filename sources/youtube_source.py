@@ -14,7 +14,7 @@ from yt_dlp.utils import DownloadCancelled
 
 from config import logger
 from database import DB
-from utils import clean_filename, normalize_url, find_audio_file
+from utils import clean_filename, normalize_url
 
 
 class YouTubeDownloader:
@@ -83,6 +83,11 @@ class YouTubeDownloader:
             'fragment_retries': 2,
             'progress_hooks': [self._check_cancel_hook],
         }
+
+        # FLAC из lossy-источника бессмысленно: сохраняем оригинальный
+        # поток (Opus/WebM) БЕЗ перекодирования — максимальное качество.
+        if selected_format == "flac":
+            return opts
 
         opts['postprocessors'] = [
             {'key': 'FFmpegExtractAudio', 'preferredcodec': codec,
@@ -159,8 +164,13 @@ class YouTubeDownloader:
                                       clean_filename(album) if album else "Unknown Album")
             os.makedirs(target_dir, exist_ok=True)
 
-        existing = find_audio_file(target_dir, final_name)
-        if existing:
+        # Определение расширения итогового файла (для "flac" — оригинальный webm)
+        file_ext = self.target_extension(self.settings)
+        if self.settings.get("format", "aac") == "flac":
+            file_ext = "webm"
+        file_path = os.path.join(target_dir, f"{final_name}.{file_ext}")
+
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 1024:
             with self.parent.lock:
                 self.parent.stats["skipped"] += 1
             self._log(f"⏭ Уже есть: {final_name}")
@@ -169,26 +179,26 @@ class YouTubeDownloader:
 
         self._log(f"📥 Загрузка: {final_name}")
 
-        result_path = None
+        success = False
         if track_id:
             video_url = f"https://www.youtube.com/watch?v={track_id}"
-            result_path = self._try_download(video_url, quality, target_dir, final_name)
+            success = self._try_download(video_url, quality, target_dir, final_name)
         elif url:
-            result_path = self._try_download(url, quality, target_dir, final_name)
+            success = self._try_download(url, quality, target_dir, final_name)
 
-        if not result_path and not self.parent.cancel_event.is_set():
+        if not success and not self.parent.cancel_event.is_set():
             self._log(f"🔄 Поиск: {final_name}")
             search_query = f"ytsearch1:{artist} {title} audio"
-            result_path = self._try_download(search_query, quality, target_dir, final_name)
+            success = self._try_download(search_query, quality, target_dir, final_name)
 
-        if result_path:
+        if success:
             with self.parent.lock:
                 self.parent.stats["downloaded"] += 1
-                self.parent.downloaded_files.append(result_path)
+                self.parent.downloaded_files.append(file_path)
             self._log(f"✅ Готово: {final_name}")
             final_url = f"https://www.youtube.com/watch?v={track_id}" if track_id else url
             if final_url:
-                DB.add_track(title, artist, "ytmusic", final_url, result_path)
+                DB.add_track(title, artist, "ytmusic", final_url, file_path)
             self.parent.gui_queue.put(("track_card", {"title": title, "artist": artist, "source": "ytmusic"}))
         elif self.parent.cancel_event.is_set():
             pass
@@ -201,14 +211,21 @@ class YouTubeDownloader:
         self.parent.update_progress_bar()
 
     def _try_download(self, url_or_query, quality, playlist_dir, final_name):
-        """Попытка скачать один трек. Возвращает путь к файлу или None."""
+        """Попытка скачать один трек"""
         opts = self.get_ydl_opts(quality, playlist_dir, f"{final_name}.%(ext)s")
+
+        # Определение расширения итогового файла (для "flac" — оригинальный webm)
+        file_ext = self.target_extension(self.settings)
+        if self.settings.get("format", "aac") == "flac":
+            file_ext = "webm"
+        file_path = os.path.join(playlist_dir, f"{final_name}.{file_ext}")
+
         url_or_query = normalize_url(url_or_query)
 
         max_retries = 2
         for attempt in range(max_retries):
             if self.parent.cancel_event.is_set():
-                return None
+                return False
 
             try:
                 with yt_dlp.YoutubeDL(opts) as ydl:
@@ -224,36 +241,20 @@ class YouTubeDownloader:
                 else:
                     break
 
-            found = find_audio_file(playlist_dir, final_name)
-            if found:
-                return found
+            if os.path.exists(file_path) and os.path.getsize(file_path) > 1024:
+                return True
 
-        found = find_audio_file(playlist_dir, final_name)
-        if found:
-            return found
+        if os.path.exists(file_path) and os.path.getsize(file_path) > 1024:
+            return True
 
-        # Не удаляем готовые аудиофайлы — только обрывки загрузки и превью.
-        for ext in (".part", ".ytdl", ".webp", ".jpg"):
+        for ext in [".webm", ".m4a", ".webp", ".jpg", ".part"]:
             temp = os.path.join(playlist_dir, f"{final_name}{ext}")
             if os.path.exists(temp):
                 try:
                     os.remove(temp)
                 except Exception:
                     pass
-        return None
-
-    def _collect_entries(self, info, mode):
-        """yt-dlp для плейлистов YouTube/YouTube Music часто отдаёт YoutubeTab,
-        а не YoutubePlaylist — смотрим на _type/entries, а не на ie_key."""
-        raw_entries = info.get("entries")
-        is_playlist = info.get("_type") == "playlist" or raw_entries is not None
-        if is_playlist:
-            entries = list(raw_entries or [])
-            if mode == "single":
-                entries = entries[:1]
-        else:
-            entries = [info]
-        return [e for e in entries if e and (e.get("id") or e.get("url"))]
+        return False
 
     def download(self, url, mode, target_folder, quality):
         """Основной метод загрузки с YouTube"""
@@ -290,7 +291,19 @@ class YouTubeDownloader:
                 self.parent._finish(ok=False, error="Не удалось получить информацию")
                 return
 
-            valid_entries = self._collect_entries(info, mode)
+            entries = []
+            if mode == "single":
+                if info.get('ie_key') == 'YoutubePlaylist':
+                    entries = info.get('entries', [])[:1]
+                else:
+                    entries = [info]
+            else:
+                if info.get('ie_key') == 'YoutubePlaylist':
+                    entries = list(info.get('entries', []))
+                else:
+                    entries = [info]
+
+            valid_entries = [e for e in entries if e and (e.get('id') or e.get('url'))]
 
             if not valid_entries:
                 self._log("❌ Нет доступных треков")
@@ -353,10 +366,10 @@ class YouTubeDownloader:
                 self._log(f"📁 Папка: {playlist_dir}")
                 self._log("═" * 40)
                 self.parent._save_report(playlist_title, playlist_dir)
-                self.parent._finish(ok=True, folder=playlist_dir)
+                self.parent._finish(ok=True)
             else:
                 self._log("🛑 ShipTones: ЗАГРУЗКА ПРЕРВАНА")
-                self.parent._finish(ok=True, folder=playlist_dir)
+                self.parent._finish(ok=True)
 
         except Exception as e:
             self._log(f"❌ Ошибка: {e}")
