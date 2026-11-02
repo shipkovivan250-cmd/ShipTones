@@ -1,0 +1,52 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "android/**"
+      - "mobile/**"
+      - "tests/**"
+      - ".github/workflows/build-android.yml"
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          target: android-34
+          build-tools: 34.0.0
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Generate Gradle wrapper
+        run: cd android && gradle wrapper
+
+      - name: Lint
+        run: cd android && ./gradlew lint
+
+      - name: Unit tests
+        run: cd android && ./gradlew testDebugUnitTest
+
+      - name: Assemble Debug APK
+        run: cd android && ./gradlew assembleDebug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          retention-days: 30
