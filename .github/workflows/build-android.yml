@@ -29,22 +29,19 @@ jobs:
           accept-android-sdk-licenses: true
 
       - name: Create local.properties
-        run: echo "sdk.dir=$ANDROID_HOME" > android/local.properties
+        run: echo "sdk.dir=${{ env.ANDROID_SDK_ROOT }}" > android/local.properties
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Generate Gradle wrapper
-        run: cd android && gradle wrapper
-
       - name: Lint
-        run: cd android && ./gradlew lint
+        run: cd android && gradle lint
 
       - name: Unit tests
-        run: cd android && ./gradlew testDebugUnitTest
+        run: cd android && gradle testDebugUnitTest
 
       - name: Assemble Debug APK
-        run: cd android && ./gradlew assembleDebug
+        run: cd android && gradle assembleDebug
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
