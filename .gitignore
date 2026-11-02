@@ -1,1 +1,21 @@
-(empty)
+# Bytecode / кэш
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Android / Gradle
+.android/
+.gradle/
+build/
+local.properties
+*.apk
+*.aab
+
+# Локальные артефакты разработки (не коммититься)
+shiptones.db
+settings.json
+shiptones.log
+.DS_Store

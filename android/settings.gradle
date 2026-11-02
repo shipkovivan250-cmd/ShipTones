@@ -1,0 +1,16 @@
+pluginManagement {
+    repositories {
+        gradlePluginPortal()
+        google()
+        mavenCentral()
+        maven { url = 'https://chaquo.com/chaquopy' }
+    }
+}
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url = 'https://chaquo.com/chaquopy' }
+    }
+}
+rootProject.name = 'ShipTonesAndroid'
