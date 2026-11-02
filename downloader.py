@@ -15,7 +15,7 @@ from utils import (clean_filename, normalize_url, find_ffmpeg,
 from sources import get_downloader
 
 if HAS_MUTAGEN:
-    from mutagen.id3 import TIT2, TPE1, TALB, TRCK, TCON, TDRC, TXXX
+    from mutagen.id3 import TIT2, TPE1, TALB, TRCK, TCON, TDRC
     from mutagen.mp3 import MP3
 
 # ============================================================
@@ -116,53 +116,20 @@ class Downloader:
                 parts = name_clean.split(" - ", 1)
                 artist = parts[0].strip() if len(parts) > 1 else "Unknown Artist"
                 title = parts[1].strip() if len(parts) > 1 else name_clean.strip()
+                if entry:
+                    artist = entry.get("artist") or entry.get("uploader") or artist
+                    title = entry.get("track") or entry.get("title") or title
 
                 try:
-                    # Определяем тип файла по расширению и используем соответствующий класс
-                    file_ext_lower = file_ext.lower()
-                    if file_ext_lower in ['.flac']:
-                        from mutagen.flac import FLAC
-                        audio = FLAC(audio_file)
-                    elif file_ext_lower in ['.opus', '.ogg']:
-                        from mutagen.oggopus import OggOpus
-                        audio = OggOpus(audio_file)
-                    elif file_ext_lower in ['.m4a', '.aac', '.mp4']:
-                        from mutagen.mp4 import MP4
-                        audio = MP4(audio_file)
-                        # Для MP4 используем другой подход к тегам
-                        audio['\xa9nam'] = title  # Название
-                        audio['\xa9ART'] = artist  # Артист
-                        if self.settings.get("extended_tags", True) and entry:
-                            if entry.get('album'):
-                                audio['\xa9alb'] = entry['album']
-                            if entry.get('genre'):
-                                audio['\xa9gen'] = entry['genre']
-                        audio.save()
-                        tag_success += 1
-                        continue
-                    else:
-                        # По умолчанию считаем MP3
-                        audio = MP3(audio_file)
-                    
-                    # Обработка тегов ID3 для MP3 и других форматов с поддержкой ID3
-                    if hasattr(audio, 'tags'):
-                        if audio.tags is None:
-                            audio.add_tags()
-
-                        audio.tags.add(TIT2(encoding=3, text=title))
-                        audio.tags.add(TPE1(encoding=3, text=artist))
-
-                        if self.settings.get("extended_tags", True) and entry:
-                            if entry.get('album'):
-                                audio.tags.add(TALB(encoding=3, text=entry['album']))
-                            if entry.get('track_number'):
-                                audio.tags.add(TRCK(encoding=3, text=str(entry['track_number'])))
-                            if entry.get('genre'):
-                                audio.tags.add(TCON(encoding=3, text=entry['genre']))
-                            ud = entry.get('upload_date', '')
-                            if ud and len(ud) >= 4:
-                                audio.tags.add(TDRC(encoding=3, text=ud[:4]))
-                        audio.save()
+                    extra = {}
+                    if self.settings.get("extended_tags", True) and entry:
+                        extra = {
+                            "album": entry.get("album"),
+                            "track": entry.get("track_number") or entry.get("track_number_str"),
+                            "genre": entry.get("genre"),
+                            "year": (entry.get("upload_date") or "")[:4] or None,
+                        }
+                    if self._write_tags(audio_file, file_ext.lower(), title, artist, extra):
                         tag_success += 1
                 except Exception as e:
                     logger.exception(f"Tag error for {audio_file}")
@@ -211,13 +178,91 @@ class Downloader:
     # ============================================================
     # ФИНИШ И ДИСПЕТЧЕР — вызываются из модулей sources/
     # ============================================================
-    def _finish(self, ok, error=None):
+    def _write_tags(self, audio_file, file_ext, title, artist, extra=None):
+        extra = extra or {}
+        album = extra.get("album")
+        track = extra.get("track")
+        genre = extra.get("genre")
+        year = extra.get("year")
+
+        if file_ext in (".flac",):
+            from mutagen.flac import FLAC
+            audio = FLAC(audio_file)
+            audio["title"] = title
+            audio["artist"] = artist
+            if album:
+                audio["album"] = album
+            if track:
+                audio["tracknumber"] = str(track)
+            if genre:
+                audio["genre"] = genre
+            if year:
+                audio["date"] = str(year)
+            audio.save()
+            return True
+
+        if file_ext in (".opus", ".ogg"):
+            from mutagen.oggopus import OggOpus
+            audio = OggOpus(audio_file)
+            audio["title"] = title
+            audio["artist"] = artist
+            if album:
+                audio["album"] = album
+            if track:
+                audio["tracknumber"] = str(track)
+            if genre:
+                audio["genre"] = genre
+            if year:
+                audio["date"] = str(year)
+            audio.save()
+            return True
+
+        if file_ext in (".m4a", ".aac", ".mp4"):
+            from mutagen.mp4 import MP4
+            audio = MP4(audio_file)
+            audio["\xa9nam"] = title
+            audio["\xa9ART"] = artist
+            if album:
+                audio["\xa9alb"] = album
+            if genre:
+                audio["\xa9gen"] = genre
+            if year:
+                audio["\xa9day"] = str(year)
+            if track:
+                try:
+                    audio["trkn"] = [(int(track), 0)]
+                except (TypeError, ValueError):
+                    pass
+            audio.save()
+            return True
+
+        if file_ext != ".mp3":
+            return False
+
+        audio = MP3(audio_file)
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags.add(TIT2(encoding=3, text=title))
+        audio.tags.add(TPE1(encoding=3, text=artist))
+        if album:
+            audio.tags.add(TALB(encoding=3, text=album))
+        if track:
+            audio.tags.add(TRCK(encoding=3, text=str(track)))
+        if genre:
+            audio.tags.add(TCON(encoding=3, text=genre))
+        if year:
+            audio.tags.add(TDRC(encoding=3, text=str(year)))
+        audio.save()
+        return True
+
+    def _finish(self, ok, error=None, folder=None):
         """Завершение загрузки, вызывается из модулей источников"""
         self.gui_queue.put(("done", {
             "ok": ok,
             "canceled": self.cancel_event.is_set(),
             "stats": self.stats,
             "error": error,
+            "folder": folder,
         }))
 
     def download(self, url, mode, target_folder, quality, source="ytmusic"):
