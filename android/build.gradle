@@ -1,0 +1,71 @@
+plugins {
+    id 'com.android.application' version '8.2.0'
+    id 'org.jetbrains.kotlin.android' version '1.9.20'
+    id 'com.chaquo.python' version '12.1.0'
+}
+
+android {
+    namespace 'com.shiptones.app'
+    compileSdk 34
+
+    defaultConfig {
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+
+        // Разрешаем просмотр отладочной информации в Chaquopy.
+        testBuildType 'debug'
+    }
+
+    buildTypes {
+        debug {
+            debuggable true
+            jniDebuggable false
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    sourceSets {
+        main {
+            assets { srcDirs = ['assets'] }
+            res { srcDirs = ['res'] }
+        }
+    }
+
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+        // Пишем только в приватную директорию приложения — dangerous permission не требуется.
+        disable 'MissingPermission', 'UnusedResources', 'InvalidPackage'
+    }
+}
+
+python {
+    // Устанавливается Chaquopy (не из системного pip хоста).
+    version '3.10'
+    pip {
+        install 'yt-dlp' 'mutagen' 'Pillow'
+    }
+    // Корень репозитория: там лежат config.py, database.py, downloader.py, sources/, mobile/.
+    srcDir '../'
+}
+
+dependencies {
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.20'
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+    implementation 'androidx.webkit:webkit:1.6.1'
+    // mobile-ffmpeg: конвертация/нормализация аудио на устройстве.
+    implementation 'com.arthenica:mobile-ffmpeg-full:6.0.1'
+}

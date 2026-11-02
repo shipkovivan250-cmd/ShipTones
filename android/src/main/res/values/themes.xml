@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Базовая тема приложения (без экшн-бара — UI полностью в WebView). -->
+    <style name="Theme.ShipTones" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#8b5cf6</item>
+        <item name="colorPrimaryDark">#6d28d9</item>
+        <item name="colorSecondary">#a78bfa</item>
+        <item name="android:windowBackground">#0a0a0b</item>
+        <item name="android:statusBarColor">#0a0a0b</item>
+        <item name="android:navigationBarColor">#0a0a0b</item>
+    </style>
+</resources>
