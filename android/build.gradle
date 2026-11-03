@@ -1,7 +1,7 @@
 plugins {
     id 'com.android.application' version '8.2.0'
     id 'org.jetbrains.kotlin.android' version '1.9.20'
-    id 'com.chaquo.python' version '12.0.1'
+    id 'com.chaquo.python' version '17.2.0'
 }
 
 android {
@@ -15,8 +15,12 @@ android {
         versionName '1.0.0'
         buildToolsVersion '34.0.0'
 
-        // Разрешаем просмотр отладочной информации в Chaquopy.
+        // Allow debug info viewing in Chaquopy.
         testBuildType 'debug'
+
+        ndk {
+            abiFilters = ["arm64-v8a", "x86_64"]
+        }
     }
 
     buildTypes {
@@ -48,25 +52,29 @@ android {
     lint {
         abortOnError false
         checkReleaseBuilds false
-        // Пишем только в приватную директорию приложения — dangerous permission не требуется.
         disable 'MissingPermission', 'UnusedResources', 'InvalidPackage'
     }
 }
 
 chaquopy {
-    // Устанавливается Chaquopy (не из системного pip хоста).
-    version '3.10'
-    pip {
-        install 'yt-dlp' 'mutagen' 'Pillow'
+    defaultConfig {
+        version = "3.10"
+        pip {
+            install("yt-dlp")
+            install("mutagen")
+            install("Pillow")
+        }
     }
-    // Корень репозитория: там лежат config.py, database.py, downloader.py, sources/, mobile/.
-    srcDir '../'
+    sourceSets {
+        getByName("main") {
+            srcDir("../")
+        }
+    }
 }
 
 dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.20'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.webkit:webkit:1.6.1'
-    // mobile-ffmpeg: конвертация/нормализация аудио на устройстве.
     implementation 'com.arthenica:mobile-ffmpeg-full:6.0.1'
 }
