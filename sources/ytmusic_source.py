@@ -5,7 +5,7 @@
 
 import os
 import time
-from datetime import datetime
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yt_dlp
@@ -32,6 +32,7 @@ class YouTubeMusicDownloader(YouTubeDownloader):
         try:
             self._log("🎵 ShipTones: Получение информации о YouTube Music...")
             url = normalize_url(url)
+            self.parent.start_time = time.time()
 
             # Специфичные настройки для YouTube Music
             info_opts = {
@@ -88,9 +89,8 @@ class YouTubeMusicDownloader(YouTubeDownloader):
                 first = valid_entries[0]
                 playlist_title = f"{first.get('artist', 'Unknown')} - {first.get('title', 'Unknown')}"
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_title = clean_filename(playlist_title)[:80]
-            playlist_dir = os.path.join(target_folder, f"{safe_title}_{timestamp}")
+            playlist_dir = os.path.join(target_folder, safe_title)
             os.makedirs(playlist_dir, exist_ok=True)
 
             with self.parent.lock:
