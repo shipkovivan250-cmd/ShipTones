@@ -298,6 +298,17 @@ def embed_car_friendly_cover(audio_path: str, image_url: str) -> bool:
             logger.warning(
                 f"Обложка >{150}KB для {os.path.basename(audio_path)}. Пропуск.")
             return False
+
+        # --- Сохраняем обложку рядом с аудиофайлом (cover.jpg) ---
+        # Многие автомобильные магнитолы (в т.ч. LADA Granta Club / Enjoy Pro)
+        # не читают встроенные APIC-теги, но берут обложку из отдельного файла.
+        cover_path = os.path.splitext(audio_path)[0] + ".jpg"
+        try:
+            with open(cover_path, "wb") as f:
+                f.write(jpeg_data)
+        except Exception:
+            pass
+
         return embed_cover_jpeg(audio_path, jpeg_data)
     except Exception as e:
         logger.error(f"Ошибка обложки {os.path.basename(audio_path)}: {e}")
