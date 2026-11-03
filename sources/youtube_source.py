@@ -6,7 +6,7 @@
 import os
 import re
 import time
-from datetime import datetime
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import yt_dlp
@@ -81,6 +81,7 @@ class YouTubeDownloader:
             'socket_timeout': 15,
             'retries': 2,
             'fragment_retries': 2,
+            'concurrent_fragment_downloads': 4,  # быстрее фрагментированных/потоковых форматов
             'progress_hooks': [self._check_cancel_hook],
         }
 
@@ -319,9 +320,8 @@ class YouTubeDownloader:
                 first = valid_entries[0]
                 playlist_title = f"{first.get('artist', 'Unknown')} - {first.get('title', 'Unknown')}"
 
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_title = clean_filename(playlist_title)[:80]
-            playlist_dir = os.path.join(target_folder, f"{safe_title}_{timestamp}")
+            playlist_dir = os.path.join(target_folder, safe_title)
             os.makedirs(playlist_dir, exist_ok=True)
 
             with self.parent.lock:
