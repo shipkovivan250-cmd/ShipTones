@@ -1,7 +1,7 @@
 plugins {
     id 'com.android.application' version '8.2.0'
     id 'org.jetbrains.kotlin.android' version '1.9.20'
-    id 'com.chaquo.python' version '17.2.0'
+    id 'com.chaquo.python' version '12.0.1'
 }
 
 android {
@@ -17,10 +17,6 @@ android {
 
         // Allow debug info viewing in Chaquopy.
         testBuildType 'debug'
-
-        ndk {
-            abiFilters = ["arm64-v8a", "x86_64"]
-        }
     }
 
     buildTypes {
@@ -57,19 +53,11 @@ android {
 }
 
 chaquopy {
-    defaultConfig {
-        version = "3.10"
-        pip {
-            install("yt-dlp")
-            install("mutagen")
-            install("Pillow")
-        }
+    version '3.10'
+    pip {
+        install 'yt-dlp' 'mutagen' 'Pillow'
     }
-    sourceSets {
-        getByName("main") {
-            srcDir("../")
-        }
-    }
+    srcDir '../'
 }
 
 dependencies {
