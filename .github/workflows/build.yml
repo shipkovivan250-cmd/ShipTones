@@ -79,7 +79,8 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libgtk-3-dev libwebkit2gtk-4.0-dev
+          sudo apt-get install -y ffmpeg libgtk-3-dev libwebkit2gtk-4.0-dev libgirepository1.0-dev
+          # libgirepository1.0-dev — обязателен для pip install PyGObject (gh-пакет pygobject)
 
       - name: Install Python dependencies
         run: |
