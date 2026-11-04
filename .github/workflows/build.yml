@@ -79,8 +79,9 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg libgtk-3-dev libwebkit2gtk-4.0-dev libgirepository1.0-dev
-          # libgirepository1.0-dev — обязателен для pip install PyGObject (gh-пакет pygobject)
+          sudo apt-get install -y ffmpeg libgtk-3-dev libwebkit2gtk-4.1-dev libgirepository1.0-dev
+          # libwebkit2gtk-4.1-dev — актуальное имя пакета в новых версиях Ubuntu
+          # (libwebkit2gtk-4.0-dev в Ubuntu 26.04 уже отсутствует).
 
       - name: Install Python dependencies
         run: |
