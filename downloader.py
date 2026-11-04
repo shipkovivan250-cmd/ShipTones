@@ -94,6 +94,7 @@ class Downloader:
         downloaded_files = list(self.downloaded_files)
 
         cover_success = 0
+        cover_failed = 0
         tag_success = 0
 
         for audio_file in downloaded_files:
@@ -112,6 +113,12 @@ class Downloader:
                     thumb_url = get_youtube_thumbnail_url(video_id)
                     if embed_car_friendly_cover(audio_file, thumb_url):
                         cover_success += 1
+                    else:
+                        cover_failed += 1
+                        self._log(f"❌ Обложка не обработана: {os.path.basename(audio_file)}")
+                else:
+                    cover_failed += 1
+                    self._log(f"❌ Обложка не найдена (video_id): {os.path.basename(audio_file)}")
 
                 parts = name_clean.split(" - ", 1)
                 artist = parts[0].strip() if len(parts) > 1 else "Unknown Artist"
@@ -138,7 +145,8 @@ class Downloader:
             except Exception as e:
                 self._log(f"⚠️ Ошибка обработки {name}: {str(e)[:50]}")
 
-        self._log(f"✅ ShipTones: Обложки встроены: {cover_success}/{len(downloaded_files)}")
+        self._log(f"✅ ShipTones: Обложки встроены: {cover_success}/{len(downloaded_files)}"
+                 f" (не удалось: {cover_failed})")
         self._log(f"✅ ShipTones: Теги обновлены: {tag_success}/{len(downloaded_files)}")
 
     # ============================================================

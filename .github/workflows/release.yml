@@ -51,6 +51,18 @@ jobs:
             --collect-all pywebview `
             --collect-all pythonnet `
             --collect-all clr_loader `
+            --hidden-import=yt_dlp `
+            --hidden-import=mutagen `
+            --hidden-import=mutagen.id3 `
+            --hidden-import=mutagen.mp3 `
+            --hidden-import=mutagen.mp4 `
+            --hidden-import=mutagen.flac `
+            --hidden-import=mutagen.ogg `
+            --hidden-import=mutagen.oggvorbis `
+            --hidden-import=mutagen.oggopus `
+            --hidden-import=PIL `
+            --hidden-import=PIL.Image `
+            --hidden-import=PIL.ImageOps `
             main.py
 
       - name: Publish GitHub Release
