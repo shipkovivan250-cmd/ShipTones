@@ -81,6 +81,20 @@ def update_ytdlp():
     except Exception as e:
         return False, str(e)
 
+def open_folder(path):
+    """Открыть папку в системном файловом менеджере (Проводнике)."""
+    if not path:
+        return
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception as e:
+        logger.error(f"Не удалось открыть папку {path}: {e}")
+
 # ============================================================
 # СТРОКИ И ХЭШИ
 # ============================================================
