@@ -26,13 +26,18 @@ jobs:
         if (Test-Path requirements.txt) { pip install -r requirements.txt }
         
     - name: Build EXE
+      shell: pwsh
       run: |
-        pyinstaller --onefile --windowed --name "ShipTones" --icon="assets/icon.ico" main.py
-        # Если иконки нет, пробуем без неё
+        # ФИКС CI: assets/icon.ico в репозитории нет — PyInstaller падал с
+        # FileNotFoundError и валил весь шаг (fallback без иконки не успевал
+        # выполниться). Иконка теперь добавляется только если файл существует.
+        $icon = if (Test-Path "assets/icon.ico") { '--icon="assets/icon.ico"' } else { "" }
+        pyinstaller --onefile --windowed --name "ShipTones" $icon main.py
         if (-not (Test-Path "dist/ShipTones.exe")) {
           pyinstaller --onefile --windowed --name "ShipTones" main.py
         }
-        
+        if (-not (Test-Path "dist/ShipTones.exe")) { exit 1 }
+
     - name: Create Draft Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v1
