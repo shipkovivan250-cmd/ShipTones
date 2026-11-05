@@ -323,7 +323,7 @@
     $("set-extended-tags").checked = !!settings.extended_tags;
     $("set-normalize-volume").checked = !!settings.normalize_volume;
     $("set-bass-boost").checked = !!settings.bass_boost;
-    $("set-max-workers").value = String(settings.max_workers || 3);
+    $("set-max-workers").value = String(settings.max_workers || 4);
 
     const persist = () => asyncApi("settingsSet", JSON.stringify(settings));
     $("set-smart-dedup").addEventListener("change", (e) => { settings.smart_dedup = e.target.checked; persist(); });

@@ -97,11 +97,17 @@ class Downloader:
         cover_failed = 0
         tag_success = 0
 
-        for audio_file in downloaded_files:
+        def _process_one_track(audio_file):
+            """Один трек целиком: обложка (сеть) + теги (локально).
+            Возвращает (cover_ok, tag_ok, error); error — при исключении, уже
+            залогировано внутри. Операции над разными файлами независимы, поэтому
+            метод безопасен для параллельного выполнения в ThreadPoolExecutor."""
+            name = os.path.basename(audio_file)
+            name_clean, file_ext = os.path.splitext(name)
+            error = None
+            cover_ok = False
+            tag_ok = False
             try:
-                name = os.path.basename(audio_file)
-                name_clean, file_ext = os.path.splitext(name)
-
                 video_id = video_ids_dict.get(name_clean)
                 entry = info_by_title.get(name_clean)
                 if not video_id and " - " in name_clean:
@@ -112,12 +118,10 @@ class Downloader:
                 if video_id and re.fullmatch(r'[A-Za-z0-9_-]{11}', video_id):
                     thumb_url = get_youtube_thumbnail_url(video_id)
                     if embed_car_friendly_cover(audio_file, thumb_url):
-                        cover_success += 1
+                        cover_ok = True
                     else:
-                        cover_failed += 1
                         self._log(f"❌ Обложка не обработана: {os.path.basename(audio_file)}")
                 else:
-                    cover_failed += 1
                     self._log(f"❌ Обложка не найдена (video_id): {os.path.basename(audio_file)}")
 
                 parts = name_clean.split(" - ", 1)
@@ -136,14 +140,40 @@ class Downloader:
                             "genre": entry.get("genre"),
                             "year": (entry.get("upload_date") or "")[:4] or None,
                         }
-                    if self._write_tags(audio_file, file_ext.lower(), title, artist, extra):
-                        tag_success += 1
+                    tag_ok = self._write_tags(audio_file, file_ext.lower(), title, artist, extra) or False
                 except Exception as e:
                     logger.exception(f"Tag error for {audio_file}")
                     self._log(f"⚠️ Ошибка тегов: {os.path.basename(audio_file)} — {str(e)[:50]}")
 
             except Exception as e:
+                error = str(e)
                 self._log(f"⚠️ Ошибка обработки {name}: {str(e)[:50]}")
+
+            return cover_ok, tag_ok, error
+
+        results = []
+        if len(downloaded_files) > 1:
+            # ФИКС СКОРОСТЫ: обработка обложек и тегов большого плейлиста
+            # выполнялась последовательно — после скачивания всех треков весь
+            # список треков обрабатывался в одну цепочку (сеть + mutagen).
+            # Теперь треки обрабатываются параллельно (ThreadPoolExecutor,
+            # с лимитом max_workers) — операции над разными файлами независимы.
+            workers = max(1, min(int(self.max_workers or 1), len(downloaded_files)))
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = [executor.submit(_process_one_track, f) for f in downloaded_files]
+                results = [fut.result() for fut in futures]
+        else:
+            results = [_process_one_track(f) for f in downloaded_files]
+
+        for cover_ok, tag_ok, error in results:
+            if error is not None:
+                continue  # ошибка уже залогирована внутри трека
+            if cover_ok:
+                cover_success += 1
+            else:
+                cover_failed += 1
+            if tag_ok:
+                tag_success += 1
 
         self._log(f"✅ ShipTones: Обложки встроены: {cover_success}/{len(downloaded_files)}"
                  f" (не удалось: {cover_failed})")

@@ -67,21 +67,47 @@ class YouTubeDownloader:
             'ignoreerrors': True,
             'quiet': True,
             'no_warnings': True,
-            'rm_cached_metadata': True,
             'ffmpeg_location': self.ffmpeg_path,
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(playlist_dir, filename_template),
             'writethumbnail': False,
+            # ФИКС СКОРОСТЫ: манифесты DASH/HLS НЕ пропускаем. Раньше ставили
+            # skip: ['dash', 'hls'], из-за чего yt-dlp терял аудио-only потоки
+            # (WebM/Opus ~128-160 kbps, itag 251/140) и вынужден был брать «best» —
+            # видео+аудио прогрессивный поток. Такой поток больше скачивает и
+            # скачивается медленнее, а качество оказывается ниже. bestaudio/best
+            # как раз рассчитан на аудио-only DASH-потоки, поэтому манифесты должны
+            # быть доступны.
+            # ФИКС СКОРОСТЫ 2 (клиенты): для клиентов 'web' и 'android' в yt-dlp
+            # (>=2025.11) GVS PO Token обязателен для https/DASH-стримов:
+            # без токена YouTube выдаёт троттлинг до ~50-90 KB/s и 403.
+            # Клиенты 'tv_samsung' и 'visionos' PO-токен НЕ требуют (это
+            # рекомендованные дефолты yt-dlp 2025.11+) — GVS URL без токена качаются
+            # на полной скорости без ретраев. 'web' оставляем последним как fallback.
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['web', 'android', 'tv'],
-                    'skip': ['dash', 'hls']
+                    'player_client': ['tv_samsung', 'visionos', 'web'],
                 }
             },
-            'socket_timeout': 15,
-            'retries': 2,
-            'fragment_retries': 2,
-            'concurrent_fragment_downloads': 4,  # быстрее фрагментированных/потоковых форматов
+            # ФИКС СКОРОСТЫ: socket_timeout=15 был слишком агрессивным для больших
+            # плейлистов и медленных сетей — приводил к лишним ретраям/перезапускам.
+            'socket_timeout': 30,
+            # ФИКС СКОРОСТЫ 2: больше ретраев уменьшает долю «сорванных» треков,
+            # которые иначе пришлось бы докачивать заново позже (это дороже, чем
+            # пара лишних попыток внутри загрузки).
+            'retries': 3,
+            'fragment_retries': 5,
+            # ФИКС СКОРОСТЫ 2: 8 параллельных фрагментов для фрагментированных
+            # форматов (DASH/HLS) — для длинных треков/миксов это кратный прирост;
+            # для обычного 3-5-минутного трека безвредно (скачивается 1 чанк).
+            'concurrent_fragment_downloads': 8,
+            # ФИКС СКОРОСТЫ 2: при параллельных фрагментах недоступный фрагмент
+            # НЕЛЬЗЯ тихо пропускать (получился бы «скачок»/дыра в аудио).
+            # Правильное поведение — перезапустить попытку, это делает RetryDownload.
+            'skip_unavailable_fragments': False,
+            # ФИКС СКОРОСТЫ 2: больше буфер чтения (по умолчанию 1024 KiB) —
+            # меньше пауз на ожидание сети между чанками.
+            'buffersize': 4096,
             'progress_hooks': [self._check_cancel_hook],
         }
 
@@ -279,10 +305,12 @@ class YouTubeDownloader:
                 # выборки на индексе 0 (срез "1:0" → пусто). "Без ограничения"
                 # — это None; 1 оставляем только для режима "Один трек".
                 'playlistend': 1 if mode == "single" else None,
+                # ФИКС СКОРОСТЫ: без пропуска манифестов DASH/HLS — тот же
+                # формат выбора потока, что и у скачивания (audio-only).
+                # Клиенты — как в get_ydl_opts: tv_samsung/visionos без PO-токена.
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['web', 'android', 'tv'],
-                        'skip': ['dash', 'hls']
+                        'player_client': ['tv_samsung', 'visionos', 'web'],
                     }
                 }
             }

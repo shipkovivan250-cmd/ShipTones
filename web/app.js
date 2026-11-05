@@ -354,7 +354,7 @@
     $("set-auto-categorize").checked = !!settings.auto_categorize;
     $("set-extended-tags").checked = !!settings.extended_tags;
     $("set-auto-update").checked = !!settings.auto_update_ytdlp;
-    $("set-max-workers").value = String(settings.max_workers || 3);
+    $("set-max-workers").value = String(settings.max_workers || 4);
     $("set-normalize-volume").checked = !!settings.normalize_volume;
     $("set-bass-boost").checked = !!settings.bass_boost;
     $("set-compression").checked = !!settings.compression;

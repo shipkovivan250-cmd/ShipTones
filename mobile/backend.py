@@ -106,7 +106,7 @@ class Api:
         for key, value in patch.items():
             if key == "max_workers":
                 try:
-                    value = max(1, min(5, int(value)))
+                    value = max(1, min(8, int(value)))
                 except (TypeError, ValueError):
                     continue
             if key == "quality" and value not in (
@@ -168,10 +168,10 @@ class Api:
         target_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            workers = int(self._settings.get("max_workers", 3))
+            workers = int(self._settings.get("max_workers", 4))
         except (TypeError, ValueError):
-            workers = 3
-        workers = max(1, min(5, workers))
+            workers = 4
+        workers = max(1, min(8, workers))
 
         gui_queue = queue.Queue()
         try:
