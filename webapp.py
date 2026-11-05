@@ -58,7 +58,7 @@ class Api:
     def save_settings(self, settings):
         if "max_workers" in settings:
             try:
-                settings["max_workers"] = max(1, min(5, int(settings["max_workers"])))
+                settings["max_workers"] = max(1, min(8, int(settings["max_workers"])))
             except (TypeError, ValueError):
                 settings.pop("max_workers")
         if "quality" in settings and settings["quality"] not in ("0", "96", "128", "160", "192", "256", "320"):
@@ -173,10 +173,10 @@ class Api:
         self._current_target_folder = target_root
         gui_queue = queue.Queue()
         try:
-            workers = int(self.settings.get("max_workers", 3))
+            workers = int(self.settings.get("max_workers", 4))
         except (TypeError, ValueError):
-            workers = 3
-        workers = max(1, min(5, workers))
+            workers = 4
+        workers = max(1, min(8, workers))
 
         try:
             self._downloader = Downloader(gui_queue, self.settings, max_workers=workers)
