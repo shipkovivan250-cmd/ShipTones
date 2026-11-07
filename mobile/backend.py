@@ -310,38 +310,85 @@ class Api:
             except Exception as e:  # pragma: no cover
                 logger.error(f"event_callback failed: {e}")
 
-    def _diagnose_js_runtime(self) -> str:
-        """Однократная проверка JS-рантайма перед первой загрузкой.
+    def _diagnose_js_runtime(self) -> list:
+        """Глубокая проверка JS-рантайма перед первой загрузкой (Android).
 
-        Йt-dlp молча деградирует, если quickjs недоступен — пользователь
-        видит только «Ошибка: …». Проверяем тем же образом, каким это
-        делает сам yt-dlp (`qjs --help`), и пишем ровным текстом в лог.
+        yt-dlp молча деградирует без рантайма, поэтому печатаем в лог всё:
+        путь nativeLibraryDir, его содержимое, права файла и фактический
+        пробный запуск с тем же контрактом, каким пользуется yt-dlp
+        (`--help`, затем `--script`).
         """
         if not self._android or self._js_diag_done:
-            return ""
+            return []
         self._js_diag_done = True
+        lines = []
         try:
-            from config import js_runtime_ydl_opts
-            opts = js_runtime_ydl_opts()
+            from config import android_native_library_dir
+            lib_dir = android_native_library_dir()
         except Exception as e:
-            return f"⚠️ JS-рантайм: конфигурация не удалась: {e}"
-        if not opts:
-            return ("⚠️ JS-рантайм: libqjs.so не найден или не исполняем — "
-                    "yt-dlp останется без него и скачивание YouTube падает")
+            return [f"⚠️ Diag: nativeLibraryDir недоступен: {e}"]
+        if not lib_dir:
+            return ["⚠️ Diag: nativeLibraryDir пуст (не Android-окружение?)"]
+        lines.append(f"🔎 Diag: nativeLibraryDir = {lib_dir}")
+        try:
+            entries = sorted(os.listdir(lib_dir))
+            lines.append(f"🔎 Diag: lib-файлов: {len(entries)} — "
+                         f"{', '.join(entries[:6])}{'…' if len(entries) > 6 else ''}")
+        except Exception as e:
+            lines.append(f"⚠️ Diag: listdir не удался: {e}")
+            return lines
+        qjs = os.path.join(lib_dir, "libqjs.so")
+        if not os.path.isfile(qjs):
+            lines.append(
+                "❌ Diag: libqjs.so ОТСУТСТВУЕТ в nativeLibraryDir — вероятно, "
+                "установлена сборка без рантайма; поставь последнюю APK из Releases")
+            return lines
+        try:
+            st = os.stat(qjs)
+            mode = oct(st.st_mode & 0o777)
+            f_ok = os.access(qjs, os.F_OK)
+            x_ok = os.access(qjs, os.X_OK)
+            lines.append(f"🔎 Diag: libqjs.so mode={mode} F_OK={f_ok} X_OK={x_ok}")
+        except Exception as e:
+            lines.append(f"⚠️ Diag: stat не удался: {e}")
+            return lines
+        # Пробный запуск №1: контракт yt-dlp для определения версии
         try:
             import subprocess as _sp
-            path = opts["js_runtimes"]["quickjs"]["path"]
-            r = _sp.run([path, "--help"], capture_output=True, text=True, timeout=12)
+            r = _sp.run([qjs, "--help"], capture_output=True, text=True, timeout=12)
             ver = next((ln.strip() for ln in (r.stdout or "").splitlines()
                         if "QuickJS" in ln), "")
             if ver:
-                return f"🧩 JS-рантайм найден: {ver}"
-            return ("⚠️ JS-рантайм найден, но --help не содержит версию "
-                    f"(rc={r.returncode})")
+                lines.append(f"🧩 Diag: `--help` ок → {ver}")
+            else:
+                lines.append(f"⚠️ Diag: `--help` rc={r.returncode}, версия в выводе нет")
         except PermissionError:
-            return "🚫 Система не разрешает запуск libqjs.so (exec запрещён)"
+            lines.append("🚫 Diag: запуск libqjs.so запрещён системой (exec denied) — "
+                         "подключи телефон по USB, посмотрю логи и соберу обходной вариант")
+            return lines
         except Exception as e:
-            return f"⚠️ JS-рантайм: пробный запуск не удался: {type(e).__name__}: {e}"
+            lines.append(f"🚫 Diag: пробный запуск не удался: {type(e).__name__}: {e}")
+            return lines
+        # Пробный запуск №2: контракт yt-dlp для скриптов (--script,
+        # успех = rc 0 И пустой stderr)
+        try:
+            import subprocess as _sp
+            import tempfile as _tf
+            with _tf.NamedTemporaryFile(mode="w", suffix=".js", delete=False, encoding="utf-8") as f:
+                f.write('print("shiptones-js-ok");')
+                tmp = f.name
+            r = _sp.run([qjs, "--script", tmp], capture_output=True, text=True, timeout=12)
+            os.unlink(tmp)
+            out = (r.stdout or "").strip()
+            err = (r.stderr or "").strip()
+            ok = (r.returncode == 0 and out == "shiptones-js-ok" and not err)
+            if ok:
+                lines.append("🧩 Diag: `--script` ок — решатель челленджей должен работать")
+            else:
+                lines.append(f"⚠️ Diag: `--script` rc={r.returncode} out={out!r} err={err[:120]!r}")
+        except Exception as e:
+            lines.append(f"⚠️ Diag: --script проба не удалась: {type(e).__name__}: {e}")
+        return lines
 
     def start_download(self, url: str, fmt: str = "aac") -> dict:
         """Начать загрузку одного трека/плейлиста.
@@ -356,9 +403,8 @@ class Api:
 
         # Диагностика JS-рантайма (однократно за сессию, до старта таски) —
         # без неё падение sig/n-челленджа видно как «Ошибка: …» без причины.
-        diag = self._diagnose_js_runtime()
-        if diag:
-            self._emit("log", diag)
+        for diag_line in self._diagnose_js_runtime():
+            self._emit("log", diag_line)
 
         url = str(url).strip()
         fmt = (fmt or self._settings.get("format", "aac")).lower()

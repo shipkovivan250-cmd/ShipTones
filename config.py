@@ -107,12 +107,17 @@ def android_native_library_dir():
 
 
 def js_runtime_ydl_opts() -> dict:
-    """Доп. опции YoutubeDL для внешнего JS-рантайма (yt-dlp >= 2025.10)."""
+    """Доп. опции YoutubeDL для внешнего JS-рантайма (yt-dlp >= 2025.10).
+
+    Проверяем только наличие файла: бит исполнения на extracted-библиотеках
+    варьируется от устройства к устройству, а фактический запуск всё равно
+    проверяет мобильная диагностика (mobile.backend._diagnose_js_runtime).
+    """
     lib_dir = android_native_library_dir()
     if not lib_dir:
         return {}
     qjs_path = os.path.join(lib_dir, "libqjs.so")
-    if os.path.isfile(qjs_path) and os.access(qjs_path, os.X_OK):
+    if os.path.isfile(qjs_path):
         return {"js_runtimes": {"quickjs": {"path": qjs_path}}}
     return {}
 
@@ -135,7 +140,7 @@ C_ACCENT = "#3b82f6"
 # с тем же номером (v1.2.0 и т.п.), иначе автообновление не сработает
 # и/или будет бесконечно предлагать "обновиться" на саму себя.
 # ============================================================
-APP_VERSION = "1.2.9"
+APP_VERSION = "1.2.10"
 GITHUB_REPO = "shipkovivan250-cmd/ShipTones"
 
 # ============================================================
