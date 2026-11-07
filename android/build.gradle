@@ -12,8 +12,8 @@ android {
     defaultConfig {
         minSdk 24
         targetSdk 34
-        versionCode 4
-        versionName '1.2.8'
+        versionCode 5
+        versionName '1.2.9'
         buildToolsVersion '34.0.0'
 
         // Обязательно для Chaquopy: Python — нативный компонент.
@@ -101,7 +101,9 @@ chaquopy {
         version = '3.13'
         buildPython 'C:/Users/Stiffy1337.DESKTOP-R9JQH5B/AppData/Local/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0/python.exe'
         pip {
-            install 'yt-dlp'
+            // Пин версии: yt-dlp активно меняет механику JS-рантаймов/клиентов,
+            // проверенный набор собран под 2026.10.26 (то же, что в ПК-сборке).
+            install 'yt-dlp==2026.10.26'
             install 'mutagen'
             install 'Pillow'
         }

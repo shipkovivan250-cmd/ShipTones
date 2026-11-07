@@ -205,6 +205,7 @@ class Api:
         self._download_thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
         self._current_folder: Optional[str] = None
+        self._js_diag_done = False
 
         # Директория загрузок — на Android приватная директория приложения.
         if music_dir:
@@ -309,6 +310,39 @@ class Api:
             except Exception as e:  # pragma: no cover
                 logger.error(f"event_callback failed: {e}")
 
+    def _diagnose_js_runtime(self) -> str:
+        """Однократная проверка JS-рантайма перед первой загрузкой.
+
+        Йt-dlp молча деградирует, если quickjs недоступен — пользователь
+        видит только «Ошибка: …». Проверяем тем же образом, каким это
+        делает сам yt-dlp (`qjs --help`), и пишем ровным текстом в лог.
+        """
+        if not self._android or self._js_diag_done:
+            return ""
+        self._js_diag_done = True
+        try:
+            from config import js_runtime_ydl_opts
+            opts = js_runtime_ydl_opts()
+        except Exception as e:
+            return f"⚠️ JS-рантайм: конфигурация не удалась: {e}"
+        if not opts:
+            return ("⚠️ JS-рантайм: libqjs.so не найден или не исполняем — "
+                    "yt-dlp останется без него и скачивание YouTube падает")
+        try:
+            import subprocess as _sp
+            path = opts["js_runtimes"]["quickjs"]["path"]
+            r = _sp.run([path, "--help"], capture_output=True, text=True, timeout=12)
+            ver = next((ln.strip() for ln in (r.stdout or "").splitlines()
+                        if "QuickJS" in ln), "")
+            if ver:
+                return f"🧩 JS-рантайм найден: {ver}"
+            return ("⚠️ JS-рантайм найден, но --help не содержит версию "
+                    f"(rc={r.returncode})")
+        except PermissionError:
+            return "🚫 Система не разрешает запуск libqjs.so (exec запрещён)"
+        except Exception as e:
+            return f"⚠️ JS-рантайм: пробный запуск не удался: {type(e).__name__}: {e}"
+
     def start_download(self, url: str, fmt: str = "aac") -> dict:
         """Начать загрузку одного трека/плейлиста.
 
@@ -319,6 +353,12 @@ class Api:
             return {"error": "Загрузка уже идёт"}
         if not url or not str(url).strip():
             return {"error": "Введите ссылку"}
+
+        # Диагностика JS-рантайма (однократно за сессию, до старта таски) —
+        # без неё падение sig/n-челленджа видно как «Ошибка: …» без причины.
+        diag = self._diagnose_js_runtime()
+        if diag:
+            self._emit("log", diag)
 
         url = str(url).strip()
         fmt = (fmt or self._settings.get("format", "aac")).lower()
@@ -369,6 +409,12 @@ class Api:
                     break
                 if kind == "done" and isinstance(payload, dict):
                     self._current_folder = payload.get("folder")
+                # file_done — новый файл скачан: копируем в Загрузки сразу
+                if (kind == "file_done" and isinstance(payload, str)
+                        and self._settings.get("export_to_downloads", True)):
+                    threading.Thread(
+                        target=self.export_files_to_downloads,
+                        args=([payload],), daemon=True).start()
                 self._emit(kind, payload)
                 if kind == "done" and isinstance(payload, dict):
                     # Успешное (не отменённое) завершение → экспорт в Загрузки.
@@ -421,7 +467,10 @@ class Api:
             self._emit("log", f"⚠️ Экспорт в Загрузки не удался: {e}")
             return
         if exported:
-            self._emit("log", f"📁 Экспортировано в Загрузки/ShipTones: {exported}")
+            msg = (f"📁 {Path(paths[0]).name}: сохранено в Загрузки/ShipTones"
+                   if exported == 1 and len(paths) == 1 else
+                   f"📁 Экспортировано в Загрузки/ShipTones: {exported}")
+            self._emit("log", msg)
         if names:
             self._emit("log", f"🔁 В Загрузках уже есть: {', '.join(names[:3])}"
                               + (f" +{len(names) - 3}" if len(names) > 3 else ""))

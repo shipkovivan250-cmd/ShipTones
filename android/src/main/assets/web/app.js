@@ -11,6 +11,24 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // Папка назначения: при включённом экспорте показываем понятный
+  // пользовательский путь (системные Загрузки), приватную папку не светим.
+  let destPrivateDir = "";
+  function applyDestText(privateDir) {
+    if (privateDir !== undefined) destPrivateDir = privateDir;
+    const input = $("target-dir-input");
+    const hint = $("dir-hint");
+    if (settings.export_to_downloads !== false) {
+      input.value = "Загрузки/ShipTones";
+      if (hint) hint.textContent =
+        "Каждый скачанный трек сразу копируется в системные «Загрузки» — видно в файловом менеджере. Служебная копия остаётся во внутренней памяти (нужна для истории).";
+    } else {
+      input.value = destPrivateDir || "внутренняя папка приложения";
+      if (hint) hint.textContent =
+        "Файлы сохраняются во внутренней папке приложения — она не видна в файловом менеджере";
+    }
+  }
+
   const asyncApi = (name, ...args) => {
     if (typeof window.ShipTones === "undefined" || !window.ShipTones[name]) {
       return Promise.reject(new Error("ShipTones bridge is not ready"));
@@ -343,7 +361,11 @@
     $("set-extended-tags").addEventListener("change", (e) => { settings.extended_tags = e.target.checked; persist(); });
     $("set-normalize-volume").addEventListener("change", (e) => { settings.normalize_volume = e.target.checked; persist(); });
     $("set-bass-boost").addEventListener("change", (e) => { settings.bass_boost = e.target.checked; persist(); });
-    $("set-export-downloads").addEventListener("change", (e) => { settings.export_to_downloads = e.target.checked; persist(); });
+    $("set-export-downloads").addEventListener("change", (e) => {
+      settings.export_to_downloads = e.target.checked;
+      persist();
+      applyDestText();
+    });
     $("set-max-workers").addEventListener("change", (e) => { settings.max_workers = parseInt(e.target.value, 10); persist(); });
   }
 
@@ -368,7 +390,7 @@
       $("quality-select").value = settings.quality || "256";
 
       const dir = await asyncApi("downloadDir");
-      if (dir) { $("target-dir-input").value = dir; }
+      applyDestText(dir);
 
       const online = await asyncApi("checkInternet");
       const pill = $("net-status");

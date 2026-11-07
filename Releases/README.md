@@ -121,8 +121,9 @@ $env:ANDROID_HOME = "$env:USERPROFILE\tools\android-sdk"
 
 ```
 Releases/
+├── ShipTones-1.2.9-android-debug.apk    # Android APK v1.2.9 (диагностика + экспорт на каждый трек)
 ├── ShipTones.exe                        # ПК-версия v1.2.8 (Windows, автообновление из интерфейса)
-└── ShipTones-1.2.8-android-debug.apk    # Android APK v1.2.8 (JS-рантайм QJS + экспорт в Загрузки)
+└── ShipTones-1.2.8.exe                  # ПК-версия v1.2.8 (копия с номером)
 ```
 
 ---
