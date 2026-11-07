@@ -104,7 +104,7 @@
       if (key === currentSource) btn.style.background = src.color;
       btn.style.color = key === currentSource ? src.fg : "";
       const devTag = src.in_dev ? ' <small class="dev-tag">в разработке</small>' : "";
-      btn.innerHTML = `<span class="dot" style="background:${key === currentSource ? src.fg : src.color}"></span>${src.name}${devTag}`;
+      btn.innerHTML = `<span class="src-row"><span class="dot" style="background:${key === currentSource ? src.fg : src.color}"></span>${src.name}</span>${devTag}`;
       btn.addEventListener("click", () => {
         currentSource = key;
         renderSources();
@@ -126,7 +126,7 @@
   async function detectAndApplySource(url) {
     if (!url) return;
     try {
-      const detected = await asyncApi("detect_source", url);
+      const detected = await asyncApi("detectSource", url);
       if (detected && SOURCES[detected] && detected !== currentSource) {
         currentSource = detected;
         renderSources();
@@ -246,22 +246,32 @@
   async function loadHistory() {
     const q = $("history-search").value.trim();
     const body = $("history-body");
-    body.innerHTML = `<tr><td colspan="4" class="empty-hint">Загрузка…</td></tr>`;
+    body.innerHTML = `<tr><td colspan="5" class="empty-hint">Загрузка…</td></tr>`;
     let rows = [];
     try { rows = await asyncApi("history", q); } catch (e) { rows = []; }
     body.innerHTML = "";
     if (!rows.length) {
-      body.innerHTML = `<tr><td colspan="4" class="empty-hint">Пока пусто</td></tr>`;
+      body.innerHTML = `<tr><td colspan="5" class="empty-hint">Пока пусто</td></tr>`;
       return;
     }
-    rows.forEach(([title, artist, source, date]) => {
+    rows.forEach(([title, artist, source, date, id]) => {
       const src = SOURCES[source] || { name: source, color: "#888" };
       const tr = document.createElement("tr");
       tr.innerHTML = `<td>${escapeHtml(title)}</td><td>${escapeHtml(artist)}</td>
         <td><span class="badge" style="background:${src.color}22;color:${src.color}"><span class="dot" style="background:${src.color}"></span>${src.name}</span></td>
-        <td>${escapeHtml(date)}</td>`;
+        <td>${escapeHtml(date)}</td>
+        <td><button class="share-btn" data-id="${id}" title="Поделиться треком">↗</button></td>`;
       body.appendChild(tr);
     });
+  }
+  $("history-body").addEventListener("click", (e) => {
+    const btn = e.target.closest(".share-btn");
+    if (!btn) return;
+    shareTrack(btn.dataset.id);
+  });
+  async function shareTrack(id) {
+    const res = await asyncApi("shareTrack", parseInt(id, 10));
+    if (res && res.error) toast(res.error.startsWith("share failed") ? "Не удалось открыть трек" : res.error, "error");
   }
   let searchTimer;
   $("history-search").addEventListener("input", () => {
@@ -287,17 +297,18 @@
         <td><span class="badge" style="background:${src.color}22;color:${src.color}"><span class="dot" style="background:${src.color}"></span>${src.name}</span></td>
         <td>${escapeHtml(lastSynced || "никогда")}</td>
         <td class="row-actions">
-          <button class="btn btn-sm btn-outline" data-sync="${id}">Синхр.</button>
+          <button class="btn btn-sm btn-outline" data-sync="${id}" data-url="${escapeHtml(url || "")}">Синхр.</button>
           <button class="btn btn-sm btn-danger" data-del="${id}">Удалить</button>
         </td>`;
       body.appendChild(tr);
     });
     body.querySelectorAll("[data-sync]").forEach((b) => {
-      const row = b.closest("tr");
-      const url = row ? row.cells[0] : null;
       b.addEventListener("click", async () => {
         toast("Синхронизация запущена");
         document.querySelector('.nav-item[data-view="download"]').click();
+        const url = b.dataset.url || $("url-input").value.trim();
+        if (!url) { toast("Ссылка плейлиста недоступна", "error"); return; }
+        $("url-input").value = url;
         setDownloading(true);
         try {
           const res = await asyncApi("startDownload", url, $("format-select").value);
@@ -310,7 +321,7 @@
     body.querySelectorAll("[data-del]").forEach((b) => {
       b.addEventListener("click", async () => {
         if (!confirm("Удалить плейлист из списка?")) return;
-        await asyncApi("delete_playlist", parseInt(b.dataset.del, 10));
+        await asyncApi("deletePlaylist", parseInt(b.dataset.del, 10));
         loadPlaylists();
       });
     });
@@ -323,6 +334,7 @@
     $("set-extended-tags").checked = !!settings.extended_tags;
     $("set-normalize-volume").checked = !!settings.normalize_volume;
     $("set-bass-boost").checked = !!settings.bass_boost;
+    $("set-export-downloads").checked = settings.export_to_downloads !== false; // по умолчанию ВКЛ
     $("set-max-workers").value = String(settings.max_workers || 4);
 
     const persist = () => asyncApi("settingsSet", JSON.stringify(settings));
@@ -331,6 +343,7 @@
     $("set-extended-tags").addEventListener("change", (e) => { settings.extended_tags = e.target.checked; persist(); });
     $("set-normalize-volume").addEventListener("change", (e) => { settings.normalize_volume = e.target.checked; persist(); });
     $("set-bass-boost").addEventListener("change", (e) => { settings.bass_boost = e.target.checked; persist(); });
+    $("set-export-downloads").addEventListener("change", (e) => { settings.export_to_downloads = e.target.checked; persist(); });
     $("set-max-workers").addEventListener("change", (e) => { settings.max_workers = parseInt(e.target.value, 10); persist(); });
   }
 
@@ -342,7 +355,7 @@
     const splash = $("splash");
 
     try {
-      const sourcesRaw = await asyncApi("get_sources");
+      const sourcesRaw = await asyncApi("getSources");
       SOURCES = sourcesRaw || {};
       const settingsRaw = await asyncApi("settingsGet");
       settings = settingsRaw || {};
@@ -354,17 +367,19 @@
       updateQualityOptions(settings.format || "aac");
       $("quality-select").value = settings.quality || "256";
 
-      const dir = await asyncApi("download_dir");
+      const dir = await asyncApi("downloadDir");
       if (dir) { $("target-dir-input").value = dir; }
 
-      const online = await asyncApi("check_internet");
+      const online = await asyncApi("checkInternet");
       const pill = $("net-status");
       pill.className = "status-pill " + (online ? "online" : "offline");
       pill.querySelector("span:last-child").textContent = online ? "сеть в порядке" : "нет сети";
 
-      const ver = await asyncApi("get_app_version");
+      const ver = await asyncApi("getAppVersion");
       appVersion = ver;
       $("app-version").textContent = `ShipTones v${ver}`;
+      const vSettings = $("app-version-settings");
+      if (vSettings) vSettings.textContent = `ShipTones v${ver} (Android)`;
     } catch (e) {
       toast("Ошибка инициализации интерфейса", "error");
     }

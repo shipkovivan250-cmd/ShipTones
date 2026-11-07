@@ -13,9 +13,16 @@ build/
 local.properties
 *.apk
 *.aab
+*.aar
 
 # Локальные артефакты разработки (не коммититься)
 shiptones.db
 settings.json
 shiptones.log
 .DS_Store
+
+# PyInstaller / локальная ПК-сборка (CI качает ffmpeg сам)
+dist/
+ffmpeg.exe
+ffmpeg.zip
+ffmpeg_extracted/

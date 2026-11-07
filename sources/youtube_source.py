@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import yt_dlp
 from yt_dlp.utils import DownloadCancelled
 
-from config import logger
+from config import logger, js_runtime_ydl_opts
 from database import DB
 from utils import clean_filename, normalize_url
 
@@ -110,6 +110,10 @@ class YouTubeDownloader:
             'buffersize': 4096,
             'progress_hooks': [self._check_cancel_hook],
         }
+
+        # JS-рантайм для yt-dlp >= 2025.10 (YouTube): на Android — бандловый
+        # quickjs (libqjs.so), на десктопе — {} (поведение не меняется).
+        opts.update(js_runtime_ydl_opts())
 
         # FLAC из lossy-источника бессмысленно: сохраняем оригинальный
         # поток (Opus/WebM) БЕЗ перекодирования — максимальное качество.
@@ -312,7 +316,9 @@ class YouTubeDownloader:
                     'youtube': {
                         'player_client': ['tv_samsung', 'visionos', 'web'],
                     }
-                }
+                },
+                # JS-рантайм для yt-dlp >= 2025.10 (на Android — quickjs).
+                **js_runtime_ydl_opts(),
             }
 
             with yt_dlp.YoutubeDL(info_opts) as ydl:

@@ -1,7 +1,8 @@
 plugins {
     id 'com.android.application' version '8.2.0'
     id 'org.jetbrains.kotlin.android' version '1.9.20'
-    id 'com.chaquo.python' version '12.1.0'
+    // Chaquopy 17.x: ставится из mavenCentral, поддерживает AGP 7.3–9.5 и Python 3.10–3.15.
+    id 'com.chaquo.python' version '17.2.0'
 }
 
 android {
@@ -11,9 +12,14 @@ android {
     defaultConfig {
         minSdk 24
         targetSdk 34
-        versionCode 1
-        versionName '1.0.0'
+        versionCode 4
+        versionName '1.2.8'
         buildToolsVersion '34.0.0'
+
+        // Обязательно для Chaquopy: Python — нативный компонент.
+        // Только 64-бит: Python 3.12+ в Chaquopy собирается только для 64-бит ABIs.
+        // arm64-v8a — физические телефоны, x86_64 — эмулятор.
+        ndk { abiFilters += ['arm64-v8a', 'x86_64'] }
 
         // Разрешаем просмотр отладочной информации в Chaquopy.
         testBuildType 'debug'
@@ -30,19 +36,22 @@ android {
         }
     }
 
+    // libqjs.so (QuickJS-ng) — исполняемый JS-рантайм для yt-dlp на Android
+    // (yt-dlp >= 2025.10 требует внешний JS-рантайм для YouTube):
+    // использLegacyPackaging заставляет распаковывать .so на диск с правом
+    // exec — иначе бинарь нельзя запустить (APK хранит их в zip без exec).
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
     kotlinOptions {
         jvmTarget = '1.8'
-    }
-
-    sourceSets {
-        main {
-            assets { srcDirs = ['assets'] }
-            res { srcDirs = ['res'] }
-        }
     }
 
     lint {
@@ -53,20 +62,53 @@ android {
     }
 }
 
-python {
-    // Устанавливается Chaquopy (не из системного pip хоста).
-    version '3.10'
-    pip {
-        install 'yt-dlp' 'mutagen' 'Pillow'
-    }
-    // Корень репозитория: там лежат config.py, database.py, downloader.py, sources/, mobile/.
-    srcDir '../'
-}
-
 dependencies {
     implementation 'org.jetbrains.kotlin:kotlin-stdlib:1.9.20'
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.webkit:webkit:1.6.1'
-    // mobile-ffmpeg: конвертация/нормализация аудио на устройстве.
-    implementation 'com.arthenica:mobile-ffmpeg-full:6.0.1'
+    // Тема приложения использует MaterialComponents-атрибуты (colorSecondary и т.д.).
+    implementation 'com.google.android.material:material:1.10.0'
+    // ffmpeg-kit 6.0 (full-gpl: lame/opus/vorbis + AAC/FLAC/MP3).
+    // Официальные arthenica-бинарники сняли с публикации в 2026 — используем зеркало.
+    implementation files('libs/ffmpeg-kit-full-gpl.aar')
+}
+
+// ------------------------------------------------------------
+// Python: копируем исходники из КОРНЯ репозитория (единый источник кода)
+// в build/pythonSrc, чтобы в APK не попадали web/, tests/, dist/, build/
+// и другие десктопные артефакты.
+// ------------------------------------------------------------
+def pythonSrcDir = layout.buildDirectory.dir('pythonSrc')
+tasks.register('syncPythonSources', Sync) {
+    from(new File(project.projectDir, '..')) {
+        include 'config.py', 'database.py', 'downloader.py', 'utils.py'
+        include 'sources/**', 'mobile/**'
+        exclude '**/__pycache__/**', '**/*.pyc', '**/*.pyo', '**/.pytest_cache/**'
+        // На Python-файлы это не влияет, но не тянем мусор:
+        exclude '**/*.log', '**/*.db'
+    }
+    into(pythonSrcDir)
+}
+// Chaquopy-таски должны выполняться ПОСЛЕ синхронизации исходников.
+afterEvaluate {
+    tasks.matching { it.name != 'syncPythonSources' && it.name.toLowerCase().contains('python') }
+         .configureEach { dependsOn 'syncPythonSources' }
+}
+
+chaquopy {
+    defaultConfig {
+        // Целевая версия Python на устройстве ДОЛЖНА совпадать с buildPython на консоле.
+        version = '3.13'
+        buildPython 'C:/Users/Stiffy1337.DESKTOP-R9JQH5B/AppData/Local/Microsoft/WindowsApps/PythonSoftwareFoundation.Python.3.13_qbz5n2kfra8p0/python.exe'
+        pip {
+            install 'yt-dlp'
+            install 'mutagen'
+            install 'Pillow'
+        }
+    }
+    sourceSets {
+        getByName('main') {
+            srcDir(pythonSrcDir)
+        }
+    }
 }

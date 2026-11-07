@@ -10,6 +10,9 @@ API (диалоги выбора папки, ``os.startfile``, автообно�
 
 from __future__ import annotations
 
+import json
+import itertools
+import os
 import queue
 import threading
 from pathlib import Path
@@ -19,11 +22,6 @@ from config import APP_VERSION, SOURCES, detect_source, load_settings, save_sett
 from database import Database
 from downloader import Downloader
 
-try:  # find_ffmpeg может быть недоступен без установленного utils
-    from utils import find_ffmpeg
-except Exception:  # pragma: no cover
-    find_ffmpeg = None  # type: ignore[assignment]
-
 try:  # check_internet из utils (сетевая проверка для статусной пилюли)
     from utils import check_internet
 except Exception:  # pragma: no cover
@@ -31,6 +29,160 @@ except Exception:  # pragma: no cover
 
 # Аудио-форматы, которые понимает кодек-карта youtube_source.YouTubeDownloader.
 _AUDIO_FORMATS = ("mp3", "aac", "flac", "opus")
+
+# MIME-типы для медиа-хранилища (экспорт в Загрузки).
+_MIME_BY_EXT = {
+    ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".aac": "audio/mp4",
+    ".flac": "audio/flac", ".opus": "audio/ogg", ".ogg": "audio/ogg",
+    ".webm": "audio/webm",
+}
+
+# Маркер ffmpeg_path: ffmpeg НЕ запускается как процесс (на Android это запрещено),
+# вместо этого все вызовы yt-dlp → ffmpeg перенаправляются на ffmpeg-kit через JNI
+# (см. install_mobile_ffmpeg_shim). Значение должно быть правдиво для проверок
+# вида `if not self.ffmpeg_path` в sources/youtube_source.py и ytmusic_source.py.
+MOBILE_FFMPEG_MARKER = "__mobile_ffmpeg__"
+
+
+# ============================================================
+# МОСТ: yt-dlp ↔ ffmpeg-kit (JNI, только Chaquopy/Android)
+# ============================================================
+_SHIM_STATE = {"done": False, "ok": False}
+
+
+def _is_android() -> bool:
+    """Истина только внутри Chaquopy (в мостом `java`)."""
+    try:
+        from java import jclass  # доступен только в Chaquopy
+
+        jclass("java.lang.System")
+        return True
+    except Exception:
+        return False
+
+
+def install_mobile_ffmpeg_shim() -> bool:
+    """Направляет все вызовы ffmpeg из yt-dlp на ffmpeg-kit (JNI).
+
+    На Android процесс subprocess для файлов в каталоге приложения запрещён,
+    поэтому yt-dlp перенаправляется на встроенный ffmpeg-kit:
+      - ``FFmpegPostProcessor.real_run_ffmpeg`` → ``FFmpegKit.execute(cmd)``;
+      - ``get_audio_codec`` → ``FFprobeKit.getMediaInformation``;
+      - сигнатуры доступности/версий отдаются статично (без запуска бинарников).
+    Исполняется один раз, безопасно вызывается повторно.
+    """
+    if _SHIM_STATE["done"]:
+        return _SHIM_STATE["ok"]
+    _SHIM_STATE["done"] = True
+    if not _is_android():
+        return False
+
+    try:
+        from java import jclass
+
+        _jffmpeg_kit = jclass("com.arthenica.ffmpegkit.FFmpegKit")
+        _jffprobe_kit = jclass("com.arthenica.ffmpegkit.FFprobeKit")
+    except Exception as e:
+        logger.error(f"ffmpeg-kit недоступен: {e}")
+        return False
+
+    try:
+        from yt_dlp.postprocessor import ffmpeg as _yff
+        from yt_dlp.utils import encodeArgument, variadic
+    except Exception as e:
+        logger.error(f"yt-dlp postprocessor недоступен: {e}")
+        return False
+
+    def _quote_arg(text) -> str:
+        text = str(text)
+        if not text or any(c in text for c in ' \t"\r\n'):
+            text = text.replace("\\", "\\\\").replace('"', '\\"')
+            return f'"{text}"'
+        return text
+
+    def _real_run(self_, input_path_opts, output_path_opts, *, expected_retcodes=(0,)):
+        """Копия yt_dlp.postprocessor.ffmpeg.FFmpegPostProcessor.real_run_ffmpeg
+        с заменой subprocess.Popen на FFmpegKit.execute (JNI)."""
+        self_.check_version()
+
+        oldest_mtime = min(
+            os.stat(path).st_mtime for path, _ in input_path_opts if path)
+
+        cmd = ["ffmpeg", "-y", "-loglevel", "repeat+info"]
+
+        def make_args(file, args, name, number):
+            keys = [f"_{name}{number}", f"_{name}"]
+            if name == "o":
+                args += ["-movflags", "+faststart"]
+                if number == 1:
+                    keys.append("")
+            args += self_._configuration_args("ffmpeg", keys)
+            if name == "i":
+                args.append("-i")
+            return (
+                [encodeArgument(arg) for arg in args]
+                + [self_._ffmpeg_filename_argument(file)]
+            )
+
+        for arg_type, path_opts in (("i", input_path_opts), ("o", output_path_opts)):
+            cmd += itertools.chain.from_iterable(
+                make_args(path, list(opts), arg_type, i + 1)
+                for i, (path, opts) in enumerate(path_opts) if path)
+
+        command_line = " ".join(_quote_arg(arg) for arg in cmd)
+        session = _jffmpeg_kit.execute(command_line)
+        rc = session.getReturnCode()
+        retcode = rc.getValue() if rc is not None else -1
+        if retcode not in variadic(expected_retcodes):
+            detail = ""
+            try:
+                detail = session.getAllLogsAsString()
+            except Exception:
+                pass
+            tail = (detail or "").strip().splitlines()
+            raise _yff.FFmpegPostProcessorError(
+                tail[-1] if tail else f"ffmpeg exited with code {retcode}")
+        for out_path, _ in output_path_opts:
+            if out_path:
+                self_.try_utime(out_path, oldest_mtime, oldest_mtime)
+        return ""
+
+    def _get_audio_codec(self_, path):
+        """Кодек аудиопотока через ffprobe ffmpeg-kit (замена subprocess-варианта)."""
+        try:
+            session = _jffprobe_kit.getMediaInformation(str(path))
+            info = session.getMediaInformation()
+            if info is None:
+                return None
+            for s in info.getStreams():
+                if str(s.getType() or "").lower() == "audio":
+                    codec = s.getCodec()
+                    return str(codec) if codec else None
+        except Exception as e:
+            logger.debug(f"get_audio_codec failed: {e}")
+        return None
+
+    def _fake_version(self_, prog):
+        return "6.0", {"fdk": False, "setts": False, "needs_adtstoasc": False}
+
+    _yff.FFmpegPostProcessor.available = property(lambda self_: True)
+    _yff.FFmpegPostProcessor.probe_available = property(lambda self_: False)
+    _yff.FFmpegPostProcessor.executable = property(lambda self_: "ffmpeg")
+    _yff.FFmpegPostProcessor.probe_executable = property(lambda self_: None)
+    _yff.FFmpegPostProcessor.basename = property(lambda self_: "ffmpeg")
+    _yff.FFmpegPostProcessor.probe_basename = property(lambda self_: None)
+    _yff.FFmpegPostProcessor._version = property(lambda self_: "6.0")
+    _yff.FFmpegPostProcessor._probe_version = property(lambda self_: "6.0")
+    _yff.FFmpegPostProcessor._features = {"fdk": False, "setts": False, "needs_adtstoasc": False}
+    _yff.FFmpegPostProcessor._get_ffmpeg_version = _fake_version
+    _yff.FFmpegPostProcessor.real_run_ffmpeg = _real_run
+    _yff.FFmpegPostProcessor.get_audio_codec = _get_audio_codec
+    # Без ffprobe-хелпера:	ffprobe-пути (главы всё равно приходят из info-словаря).
+    _yff.FFmpegPostProcessor._fixup_chapters = lambda self_, info: None
+
+    logger.info("ffmpeg-kit JNI-шим установлен")
+    _SHIM_STATE["ok"] = True
+    return True
 
 
 class Api:
@@ -40,14 +192,14 @@ class Api:
         music_dir: папка для закачки аудио (на Android –
             ``getExternalFilesDir(DIRECTORY_MUSIC)``). Если не передана –
             используется домашняя папка пользователя (хост/тесты).
-        ffmpeg_path: путь к ffmpeg-бинарнику/папке. На Android передаётся со
-            стороны Kotlin (mobile-ffmpeg); на хосте — через ``find_ffmpeg()``.
         event_callback: колбэк ``(kind, payload)`` для событий Python → JS.
     """
 
     def __init__(self, music_dir: Optional[str] = None, ffmpeg_path: Optional[str] = None,
                  event_callback: Optional[Callable[[str, object], None]] = None):
+        install_mobile_ffmpeg_shim()
         self._settings = load_settings()
+        self._android = _is_android()
         self.event_callback = event_callback
         self._downloader: Optional[Downloader] = None
         self._download_thread: Optional[threading.Thread] = None
@@ -64,14 +216,19 @@ class Api:
         # БД в приватной директории приложения (рядом с музыкой).
         self.db = Database(db_path=str(self.music_dir.parent / "shiptones.db"))
 
-        # FFmpeg: на Android путь приходит из Kotlin (mobile-ffmpeg); на хосте —
-        # автоматически через find_ffmpeg().
-        if ffmpeg_path:
+        # FFmpeg: на Android вызовы идут через ffmpeg-kit (JNI), путь — маркер;
+        # на хосте — явно переданный путь (тесты), иначе автопоиск find_ffmpeg().
+        if self._android:
+            self.ffmpeg_path = MOBILE_FFMPEG_MARKER
+        elif ffmpeg_path:
             self.ffmpeg_path = ffmpeg_path
-        elif find_ffmpeg:
-            self.ffmpeg_path = find_ffmpeg()
         else:
-            self.ffmpeg_path = None
+            try:
+                from utils import find_ffmpeg
+
+                self.ffmpeg_path = find_ffmpeg()
+            except Exception:
+                self.ffmpeg_path = None
         logger.info(
             f"ShipTones Mobile Api: music_dir={self.music_dir} ffmpeg={self.ffmpeg_path}")
 
@@ -96,10 +253,19 @@ class Api:
         return False
 
     # ---------------- настройки ----------------
-    def settings(self, patch: Optional[dict] = None) -> dict:
-        """Геттер/сеттер настроек. Без аргумента — вернуть текущие настройки."""
+    def settings(self, patch: Optional[dict | str] = None) -> dict:
+        """Геттер/сеттер настроек. Без аргумента — вернуть текущие настройки.
+
+        JS-мост приходит со строкой JSON (WebView → Kotlin → Python),
+        поэтому строки парсятся здесь же.
+        """
         if patch is None:
             return dict(self._settings)
+        if isinstance(patch, str):
+            try:
+                patch = json.loads(patch) if patch.strip() else {}
+            except Exception:
+                return {"error": "invalid settings JSON"}
         if not isinstance(patch, dict):
             return {"error": "settings must be an object"}
         settings = dict(self._settings)
@@ -176,7 +342,11 @@ class Api:
         gui_queue = queue.Queue()
         try:
             downloader = Downloader(gui_queue, self._settings, max_workers=workers)
-            downloader.ffmpeg_path = self.ffmpeg_path
+            # На Android ffmpeg вызывается через ffmpeg-kit (JNI), маркер
+            # проходит проверки источников `if not self.ffmpeg_path`.
+            # На хосте/тестах — обычный автонайденный путь.
+            downloader.ffmpeg_path = (
+                MOBILE_FFMPEG_MARKER if self._android else self.ffmpeg_path)
         except Exception as e:
             logger.exception("Failed to create Downloader")
             self._emit("done", {"ok": False, "canceled": False, "error": str(e)})
@@ -200,6 +370,14 @@ class Api:
                 if kind == "done" and isinstance(payload, dict):
                     self._current_folder = payload.get("folder")
                 self._emit(kind, payload)
+                if kind == "done" and isinstance(payload, dict):
+                    # Успешное (не отменённое) завершение → экспорт в Загрузки.
+                    ok = bool(payload.get("ok")) and not payload.get("canceled")
+                    snapshot = list(getattr(self._downloader, "downloaded_files", []) or [])
+                    if ok and snapshot and self._settings.get("export_to_downloads", True):
+                        threading.Thread(
+                            target=self.export_files_to_downloads,
+                            args=(snapshot,), daemon=True).start()
                 if kind == "done":
                     break
 
@@ -221,11 +399,135 @@ class Api:
     def download_dir(self) -> str:
         return str(self.music_dir)
 
+    # ---------------- экспорт в Загрузки ----------------
+    def export_files_to_downloads(self, paths) -> None:
+        """Копирует скачанные треки в системную папку «Загрузки/ShipTones»
+
+        Пользователь не может указать произвольную папку назначения
+        (Android запрещает это обычным приложениям), поэтому лучший
+        видимый путь — MediaStore.Downloads: файлы появляются в
+        файловом менеджере и в любом музыкальном плеере сразу после
+        загрузки. Внутренняя приватная копия остаётся (нужна для истории
+        и проверки дубликатов).
+        Вызывается после успешного завершения загрузки; сам по себе
+        безопасен — каждая ошибка файла гасится и попадает в лог.
+        """
+        if not self._android or not paths:
+            return
+        try:
+            exported, names, errors = self._media_store_copy(paths)
+        except Exception as e:  # Chaquopy/java недоступны — тихий выход в лог
+            logger.warning(f"export to downloads failed: {e}")
+            self._emit("log", f"⚠️ Экспорт в Загрузки не удался: {e}")
+            return
+        if exported:
+            self._emit("log", f"📁 Экспортировано в Загрузки/ShipTones: {exported}")
+        if names:
+            self._emit("log", f"🔁 В Загрузках уже есть: {', '.join(names[:3])}"
+                              + (f" +{len(names) - 3}" if len(names) > 3 else ""))
+        if errors:
+            self._emit("log", f"⚠️ Не экспортировано: {'; '.join(errors[:2])}")
+
+    def _media_store_copy(self, paths):
+        """Через MediaStore.Downloads (API 29+) — без разрешений и SAF."""
+        from com.chaquo.python.android import AndroidPlatform
+        from java import jclass
+
+        app = AndroidPlatform.getApplication()
+        sdk_int = jclass("android.os.Build$VERSION").SDK_INT
+        if int(sdk_int) < 29:
+            return 0, [], []
+        media_store = jclass("android.provider.MediaStore")
+        values_cls = jclass("android.content.ContentValues")
+        media_cols = jclass("android.provider.MediaStore$MediaColumns")
+        downloads_uri = (jclass("android.provider.MediaStore$Downloads")
+                         .EXTERNAL_CONTENT_URI)
+        resolver = app.getContentResolver()
+        rel_path = "Download/ShipTones/"
+
+        exported, skipped, errors = 0, [], []
+        for file_path in paths:
+            name = Path(file_path).name
+            try:
+                # Дедупликация: не плодим копий (1), (2)… при повторной
+                # синхронизации плейлиста — если файл с таким именем уже
+                # лежит в Загрузках/ShipTones, пропускаем.
+                cursor = resolver.query(
+                    downloads_uri,
+                    [str(media_cols.DISPLAY_NAME)],
+                    f"{media_cols.RELATIVE_PATH} = ? AND {media_cols.DISPLAY_NAME} = ?",
+                    (rel_path, name), None)
+                exists = bool(cursor.moveToFirst())
+                cursor.close()
+                if exists:
+                    skipped.append(name)
+                    continue
+
+                values = values_cls()
+                values.put(media_cols.DISPLAY_NAME, name)
+                values.put(media_cols.MIME_TYPE,
+                           _MIME_BY_EXT.get(Path(file_path).suffix.lower(),
+                                            "application/octet-stream"))
+                values.put(media_cols.RELATIVE_PATH, rel_path)
+                uri = resolver.insert(downloads_uri, values)
+                if uri is None:
+                    raise RuntimeError("MediaStore insert вернул null")
+                stream = resolver.openOutputStream(uri)
+                if stream is None:
+                    raise RuntimeError("openOutputStream вернул null")
+                with open(file_path, "rb") as src:
+                    while True:
+                        chunk = src.read(512 * 1024)
+                        if not chunk:
+                            break
+                        stream.write(chunk)
+                stream.flush()
+                stream.close()
+                exported += 1
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+        return exported, skipped, errors
+
+    def share_file(self, track_id) -> dict:
+        """Данные файла трека для системного «Поделиться» (FileProvider в Kotlin).
+
+        На Android папка загрузок приватна (getExternalFilesDir — обычные
+        файловые менеджеры её не видят), поэтому пользователь может вынести
+        скачанный трек в любое приложение через системное «Поделиться».
+        """
+        try:
+            track_id = int(track_id)
+        except (TypeError, ValueError):
+            return {"error": "invalid track id"}
+        file_path, title = self.db.get_track_file(track_id)
+        if not file_path:
+            return {"error": "Трек не найден"}
+        if not Path(file_path).exists():
+            return {"error": "Файл не найден (удалён или перемещён)"}
+        return {"ok": True, "path": str(file_path), "title": title}
+
 
 def _make_js_callback(bridge):
-    """Создаёт колбэк, пересылающий события в JS через Kotlin-мост (PyBridge.emit)."""
+    """Создаёт колбэк, пересылающий события в JS через Kotlin-мост (PyBridge.emit).
+
+    Kotlin встраивает payload в JS-вызов как ГОТОВЫЙ литерал, поэтому payload
+    здесь всегда сериализуется в корректный JSON.
+    """
 
     def _callback(kind, payload):
-        bridge.emit(kind, payload)
+        try:
+            if isinstance(payload, (dict, list, tuple)):
+                payload = json.dumps(payload, ensure_ascii=False)
+            elif payload is None:
+                payload = "null"
+            elif isinstance(payload, bool):
+                payload = "true" if payload else "false"
+            elif isinstance(payload, (int, float)):
+                payload = str(payload)
+            else:
+                payload = json.dumps(str(payload), ensure_ascii=False)
+        except Exception:
+            payload = "{}"
+        bridge.emit(str(kind), payload)
 
     return _callback

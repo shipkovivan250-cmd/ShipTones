@@ -16,20 +16,40 @@ else:
 # ПАПКА ДЛЯ ДАННЫХ (база, лог, настройки)
 # В exe — %APPDATA%\ShipTones, чтобы не мусорить рядом с exe
 # (например, на рабочем столе). При запуске из исходников —
-# как раньше, рядом со скриптами.
+# как раньше, рядом со скриптами. Фолбэк: если BASE_DIR недоступна
+# для записи (например, на Android в Chaquopy модули лежат в read-only
+# APK), данные идут в $HOME/.shiptones.
 # ============================================================
-if getattr(sys, "frozen", False):
-    if sys.platform == "win32":
-        DATA_DIR = Path(os.environ.get("APPDATA", str(BASE_DIR))) / "ShipTones"
-    elif sys.platform == "darwin":
-        DATA_DIR = Path.home() / "Library" / "Application Support" / "ShipTones"
-    else:
-        xdg = os.environ.get("XDG_CONFIG_HOME")
-        DATA_DIR = (Path(xdg) if xdg else Path.home() / ".config") / "shiptones"
-else:
-    DATA_DIR = BASE_DIR
-DATA_DIR.mkdir(parents=True, exist_ok=True)
+def _pick_data_dir() -> "Path":
+    from pathlib import Path as _P
+    candidates = []
+    if getattr(sys, "frozen", False):
+        if sys.platform == "win32":
+            candidates.append(_P(os.environ.get("APPDATA", str(BASE_DIR))) / "ShipTones")
+        elif sys.platform == "darwin":
+            candidates.append(_P.home() / "Library" / "Application Support" / "ShipTones")
+        else:
+            xdg = os.environ.get("XDG_CONFIG_HOME")
+            candidates.append((_P(xdg) if xdg else _P.home() / ".config") / "shiptones")
+    # Из исходников (desktop) — рядом со скриптами, как раньше; на Android BASE_DIR
+    # внутри APK не записываема, поэтому кандидаты проверяются с фолбэком на $HOME.
+    candidates.append(BASE_DIR)
+    home = os.environ.get("HOME")
+    if home:
+        candidates.append(_P(home) / ".shiptones")
+    for d in candidates:
+        try:
+            d.mkdir(parents=True, exist_ok=True)
+            probe = d / ".perm_check"
+            probe.touch()
+            probe.unlink()
+            return d
+        except Exception:
+            continue
+    return _P.cwd()
 
+
+DATA_DIR = _pick_data_dir()
 # ============================================================
 # ЛОГИРОВАНИЕ
 # ============================================================
@@ -62,6 +82,42 @@ except ImportError:
     logger.warning("Pillow не установлен: pip install Pillow")
 
 # ============================================================
+# ANDROID: NATIVE LIB DIR + БАНДЛОВЫЙ JS-РАНТАЙМ ДЛЯ YT-DLP
+# yt-dlp >= 2025.10 требует внешний JS-рантайм (deno/node/quickjs/bun)
+# для извлечения YouTube: без него доступны только jsless-клиенты,
+# решение подписей (sig/n) падает и скачивание на Android не работает.
+# На Android нет deno/node, поэтому в APK запасён лёгкий qjs
+# (QuickJS-ng ~2 МБ) под именем libqjs.so:
+#   1) исполняемые файлы на Android могут лежать ТОЛЬКО в
+#      nativeLibraryDir — поэтому бинарь пакуется как native-библиотека
+#      (jniLibs + useLegacyPackaging, распаковка с правом exec);
+#   2) yt-dlp проверяет рантайм запуском `qjs --help` и вызывает
+#      `qjs --script file.js` — QuickJS-ng 0.12.0 поддерживает оба.
+# На десктопе хелпер возвращает {} — поведение не меняется.
+# ============================================================
+def android_native_library_dir():
+    """Каталог распакованных native-библиотек приложения (только Chaquopy)."""
+    try:
+        from com.chaquo.python.android import AndroidPlatform  # только Chaquopy
+        info = AndroidPlatform.getApplication().getApplicationInfo()
+        lib_dir = info.nativeLibraryDir
+        return str(lib_dir) if lib_dir else None
+    except Exception:
+        return None
+
+
+def js_runtime_ydl_opts() -> dict:
+    """Доп. опции YoutubeDL для внешнего JS-рантайма (yt-dlp >= 2025.10)."""
+    lib_dir = android_native_library_dir()
+    if not lib_dir:
+        return {}
+    qjs_path = os.path.join(lib_dir, "libqjs.so")
+    if os.path.isfile(qjs_path) and os.access(qjs_path, os.X_OK):
+        return {"js_runtimes": {"quickjs": {"path": qjs_path}}}
+    return {}
+
+
+# ============================================================
 # ЕДИНАЯ ЦВЕТОВАЯ ПАЛИТРА
 # ============================================================
 C_BG     = "#0a0a0a"
@@ -79,7 +135,7 @@ C_ACCENT = "#3b82f6"
 # с тем же номером (v1.2.0 и т.п.), иначе автообновление не сработает
 # и/или будет бесконечно предлагать "обновиться" на саму себя.
 # ============================================================
-APP_VERSION = "1.2.6"
+APP_VERSION = "1.2.8"
 GITHUB_REPO = "shipkovivan250-cmd/ShipTones"
 
 # ============================================================
@@ -125,6 +181,7 @@ DEFAULT_SETTINGS = {
     "bass_boost": False,           # бас-буст 60 Гц +2 dB
     "compression": False,          # компрессия динамики
     "remove_silence": False,       # удаление тишины
+    "export_to_downloads": True,   # Android: копировать треки в системную папку Загрузки/ShipTones (MediaStore)
 }
 SETTINGS_FILE = DATA_DIR / "settings.json"
 

@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import yt_dlp
 from yt_dlp.utils import DownloadCancelled
 
-from config import logger
+from config import logger, js_runtime_ydl_opts
 from database import DB
 from utils import clean_filename, normalize_url
 from .youtube_source import YouTubeDownloader
@@ -53,7 +53,9 @@ class YouTubeMusicDownloader(YouTubeDownloader):
                     'youtube': {
                         'player_client': ['tv_samsung', 'visionos', 'web'],
                     }
-                }
+                },
+                # JS-рантайм для yt-dlp >= 2025.10 (на Android — quickjs).
+                **js_runtime_ydl_opts(),
             }
 
             with yt_dlp.YoutubeDL(info_opts) as ydl:

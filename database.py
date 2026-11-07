@@ -70,18 +70,31 @@ class Database:
         return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def get_history(self, search=""):
+        """История: колонки id и file_path добавлены В КОНЕЦ — существующие
+        потребители (мобильный app.js, десктопный GUI) берут столбцы по индексам
+        0..3, поэтому расширение совместимо (фишка «Поделиться» на Android)."""
         with self._conn() as conn:
             if search:
                 like = f"%{self._escape_like(search)}%"
                 return conn.execute("""
-                    SELECT title, artist, source, downloaded_at FROM history
+                    SELECT title, artist, source, downloaded_at, id, file_path FROM history
                     WHERE title LIKE ? ESCAPE '\\' OR artist LIKE ? ESCAPE '\\'
                     ORDER BY downloaded_at DESC LIMIT 200
                 """, (like, like)).fetchall()
             return conn.execute("""
-                SELECT title, artist, source, downloaded_at FROM history
+                SELECT title, artist, source, downloaded_at, id, file_path FROM history
                 ORDER BY downloaded_at DESC LIMIT 200
             """).fetchall()
+
+    def get_track_file(self, track_id):
+        """(file_path, title) трека по id — для экспорта/шаринга на Android."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT file_path, title FROM history WHERE id = ?", (track_id,)
+            ).fetchone()
+        if row and row[0]:
+            return row[0], row[1] or ""
+        return None, None
 
     def is_track_downloaded(self, url):
         """ФИКС: дубликат только если файл РЕАЛЬНО лежит на диске (как в v1.0)"""

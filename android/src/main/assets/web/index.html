@@ -160,7 +160,7 @@
             </div>
             <div class="table-wrap">
               <table>
-                <thead><tr><th>Трек</th><th>Исполнитель</th><th>Источник</th><th>Дата</th></tr></thead>
+                <thead><tr><th>Трек</th><th>Исполнитель</th><th>Источник</th><th>Дата</th><th aria-label="Действия"></th></tr></thead>
                 <tbody id="history-body"></tbody>
               </table>
             </div>
@@ -193,6 +193,10 @@
               <label class="switch"><input type="checkbox" id="set-auto-categorize"><span class="slider"></span></label>
             </div>
             <div class="switch-row">
+              <div><div class="t">Экспорт в Загрузки</div><div class="d">Копировать скачанные треки в системную папку Загрузки/ShipTones — они будут видны в файловом менеджере</div></div>
+              <label class="switch"><input type="checkbox" id="set-export-downloads"><span class="slider"></span></label>
+            </div>
+            <div class="switch-row">
               <div><div class="t">Расширенные теги</div><div class="d">Альбом, жанр, год и номер трека в ID3</div></div>
               <label class="switch"><input type="checkbox" id="set-extended-tags"><span class="slider"></span></label>
             </div>
@@ -221,6 +225,7 @@
           <div class="card">
             <div class="card-title">О приложении</div>
             <div class="hint" style="font-size:13px;color:var(--text-faint)">
+              <b style="color:var(--text-muted)" id="app-version-settings">ShipTones</b><br>
               Автообновление отключено — новые версии выходят в GitHub Releases.<br>
               Формат и качество применяются к новой загрузке.
             </div>

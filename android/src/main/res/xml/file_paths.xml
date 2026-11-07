@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Пути для FileProvider («Поделиться» скачанных треков).
+     Music-папка живёт в getExternalFilesDir(DIRECTORY_MUSIC)
+     или во внутренней приватной директории (тесты/фолбэк). -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path name="music" path="." />
+    <files-path name="data-music" path="." />
+</paths>

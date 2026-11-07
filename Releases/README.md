@@ -65,11 +65,64 @@ pyinstaller --onefile --windowed --name ShipTones `
 
 ---
 
+## 🤖 Сборка Android APK
+
+Приложение под Android — это тот же Python-бэкенд (yt-dlp + Chaquopy) внутри WebView.
+Сборка полностью автоматизирована, тулчейн ставится сам при первом запуске.
+
+### Сборка одной командой
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\build-android.ps1
+```
+
+Скрипт сам:
+1. Устанавливает JDK 17, Gradle 8.7 и Android SDK (platform 34, build-tools 34.0.0) в `~\tools\` — если их нет.
+2. Скачивает ffmpeg-kit full-gpl AAR в `android\libs\` — если его нет.
+3. Запускает `gradle assembleDebug`.
+4. Копирует APK в `Releases\ShipTones-<версия>-android-debug.apk`.
+
+Повторные запуски работают офлайн и занимают секунды. Для release-сборки — `gradle -p android assembleRelease` (нужен собственный keystore, debug подписан автоматически).
+
+### Что внутри APK
+
+| Компонент | Описание |
+|-----------|----------|
+| **Chaquopy 17.2.0** | CPython 3.13 внутри приложения (Python-код в APK уже откомпилирован в `.pyc`) |
+| **yt-dlp, mutagen, Pillow** | ставятся в APK как pip-зависимости через Chaquopy |
+| **ffmpeg-kit full-gpl** | JNI-библиотека FFmpeg (`libavcodec`, `libavfilter` и др.) — subprocess на Android запрещён, поэтому `mobile/backend.py` перенаправляет ffmpeg-вызовы yt-dlp на FFmpegKit |
+| **Архитектуры** | `arm64-v8a` (реальные устройства) + `x86_64` (эмулятор) |
+| **Размер** | ~139 МБ (обусловлено ffmpeg-kit full-gpl под 2 архитектуры) |
+
+### Загрузки сохраняются в приватную папку приложения
+
+`Android/data/com.shiptones.app/files/Music` — app-scoped директория, не требующая разрешений на хранилище.
+
+### Требования к устройству
+
+- Android 7.0+ (minSdk 24)
+- 64-битная архитектура (arm64-v8a или x86_64)
+
+### Gradle-команды (если нужен полный контроль)
+
+```powershell
+$env:JAVA_HOME = "$env:USERPROFILE\tools\jdk\jdk17"
+$env:ANDROID_HOME = "$env:USERPROFILE\tools\android-sdk"
+& "$env:USERPROFILE\tools\gradle\gradle-8.7\bin\gradle.bat" -p "$env:USERPROFILE\Projects\ShipTones\android" assembleDebug
+```
+
+> Python-исходники для APK фильтруются gradle-таской `syncPythonSources` (whitelist:
+> `config.py`, `database.py`, `downloader.py`, `utils.py`, `sources/**`, `mobile/**`),
+> чтобы web/, tests/ и dist/ не попали в пакет.
+
+---
+
 ## 📁 Структура папки Releases
 
 ```
 Releases/
-└── ShipTones.exe    # Готовый к использованию загрузчик
+├── ShipTones.exe                        # Готовый к использованию загрузчик (Windows)
+└── ShipTones-1.2.8-android-debug.apk    # Android APK (debug, ~139 МБ)
 ```
 
 ---
