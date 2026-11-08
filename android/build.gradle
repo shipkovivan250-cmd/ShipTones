@@ -12,8 +12,8 @@ android {
     defaultConfig {
         minSdk 24
         targetSdk 34
-        versionCode 7
-        versionName '1.2.11'
+        versionCode 8
+        versionName '1.2.12'
         buildToolsVersion '34.0.0'
 
         // Обязательно для Chaquopy: Python — нативный компонент.
@@ -104,6 +104,11 @@ chaquopy {
             // Пин версии: yt-dlp активно меняет механику JS-рантаймов/клиентов,
             // проверенный набор собран под 2026.10.26 (то же, что в ПК-сборке).
             install 'yt-dlp==2026.10.26'
+            // Скрипт-решатель sig/n-челленджей YouTube. В wheel yt-dlp
+            // 2026.10.26 vendor-набор содержит lib-скрипты только для bun/deno,
+            // а QuickJS-провайдеру нужен yt.solver.lib.js — без этого пакета
+            // скачивание на Android падает на каждом треке.
+            install 'yt-dlp-ejs==0.8.0'
             install 'mutagen'
             install 'Pillow'
         }

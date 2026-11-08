@@ -17,6 +17,42 @@ from database import DB
 from utils import clean_filename, normalize_url
 
 
+class _YtDlpLogAdapter:
+    """Мост логов yt-dlp в лог приложения.
+
+    yt-dlp с ``quiet``/``ignoreerrors`` не показывает причины ошибок. Если
+    передать объект в ``params['logger']``, все ``ERROR: …`` уходят в
+    ``logger.error``, а предупреждения — в ``logger.warning`` (см.
+    ``YoutubeDL.to_stderr``/``report_warning``), поэтому реальная причина
+    падения трека появляется в «Логе» вместо безликого «❌ Ошибка».
+    """
+
+    def __init__(self, log):
+        self._log = log
+
+    def debug(self, msg):
+        # Сюда yt-dlp шлёт обычный прогресс/инфо — не засоряем лог.
+        pass
+
+    def info(self, msg):
+        pass
+
+    def warning(self, msg):
+        msg = str(msg)
+        # ffmpeg-шим на Android передаёт путь-маркер, которого нет на диске:
+        # это ожидаемое поведение, а не проблема.
+        if "does not exist! Continuing without ffmpeg" in msg:
+            return
+        self._log(f"⚠️ yt-dlp: {msg[:300]}")
+
+    def error(self, msg):
+        msg = str(msg)
+        if "does not exist! Continuing without ffmpeg" in msg:
+            return
+        self._log(f"❌ yt-dlp: {msg[:400]}")
+
+
+
 class YouTubeDownloader:
     """Загрузчик треков и плейлистов с YouTube/YouTube Music"""
 
@@ -67,6 +103,12 @@ class YouTubeDownloader:
             'ignoreerrors': True,
             'quiet': True,
             'no_warnings': True,
+            # yt-dlp умеет отдавать ошибки только через logger: без него
+            # ignoreerrors+quiet полностью скрывают причину падения трека.
+            'logger': _YtDlpLogAdapter(self._log),
+            # Сетевой fallback решателя челленджей (GitHub-релизы yt-dlp-ejs),
+            # если локальная версия пакета когда-нибудь разойдётся с yt-dlp.
+            'remote_components': ['ejs:github'],
             'ffmpeg_location': self.ffmpeg_path,
             'format': 'bestaudio/best',
             'outtmpl': os.path.join(playlist_dir, filename_template),
@@ -261,17 +303,26 @@ class YouTubeDownloader:
         url_or_query = normalize_url(url_or_query)
 
         max_retries = 2
+        last_rc = None
         for attempt in range(max_retries):
             if self.parent.cancel_event.is_set():
                 return False
 
+            # Вторая попытка — с дефолтным набором клиентов yt-dlp: если
+            # кастомный tv_samsung/visionos/web не подошёл (бот-проверка,
+            # изменившиеся требования YouTube), трек всё равно попробуем.
+            attempt_opts = opts
+            if attempt > 0 and 'extractor_args' in opts:
+                attempt_opts = dict(opts)
+                attempt_opts.pop('extractor_args', None)
+
             try:
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url_or_query])
+                with yt_dlp.YoutubeDL(attempt_opts) as ydl:
+                    last_rc = ydl.download([url_or_query])
             except DownloadCancelled:
                 break
             except Exception as e:
-                self._log(f"⚠ [{final_name}] {str(e)[:120]}")
+                self._log(f"⚠ [{final_name}] {str(e)[:400]}")
                 error_msg = str(e).lower()
                 if "timed out" in error_msg and attempt < max_retries - 1:
                     time.sleep(1)
@@ -281,9 +332,28 @@ class YouTubeDownloader:
 
             if os.path.exists(file_path) and os.path.getsize(file_path) > 1024:
                 return True
+            if last_rc not in (0, None):
+                self._log(f"⚠ [{final_name}] yt-dlp rc={last_rc} "
+                          f"(попытка {attempt + 1}/{max_retries})")
 
         if os.path.exists(file_path) and os.path.getsize(file_path) > 1024:
             return True
+
+        # Диагностика: при ignoreerrors yt-dlp не бросает исключение, поэтому
+        # без этого в логе остаётся только «Ошибка». Показываем rc и остатки
+        # в папке — по ним видно, оборвалось ли скачивание/конвертация.
+        leftovers = []
+        try:
+            leftovers = sorted(n for n in os.listdir(playlist_dir)
+                               if n.startswith(final_name[:60]))
+        except Exception:
+            pass
+        rc_text = last_rc if last_rc is not None else "—"
+        if leftovers:
+            self._log(f"⚠ [{final_name}] файл не создан (rc={rc_text}); "
+                      f"в папке: {', '.join(leftovers[:5])}")
+        else:
+            self._log(f"⚠ [{final_name}] файл не создан (rc={rc_text}), папка пуста")
 
         for ext in [".webm", ".m4a", ".webp", ".jpg", ".part"]:
             temp = os.path.join(playlist_dir, f"{final_name}{ext}")

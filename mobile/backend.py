@@ -397,6 +397,16 @@ class Api:
                 lines.append(f"⚠️ Diag: `--script` rc={r.returncode} out={out!r} err={err[:120]!r}")
         except Exception as e:
             lines.append(f"⚠️ Diag: --script проба не удалась: {type(e).__name__}: {e}")
+        # Пакет yt-dlp-ejs поставляет yt.solver.lib.js/core.min.js для
+        # QuickJS-провайдера. Без него yt-dlp 2026.10.26 не решает sig/n,
+        # и каждый трек падает на скачивании.
+        try:
+            import yt_dlp_ejs
+            lines.append(
+                f"🧩 Diag: yt-dlp-ejs {getattr(yt_dlp_ejs, 'version', '?')} — "
+                "решатель челленджей на месте")
+        except Exception as e:
+            lines.append(f"⚠️ Diag: пакет yt-dlp-ejs отсутствует: {type(e).__name__}: {e}")
         return lines
 
     def start_download(self, url: str, fmt: str = "aac", mode: str = None) -> dict:
