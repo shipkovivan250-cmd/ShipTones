@@ -328,7 +328,16 @@ class Api:
         except Exception as e:
             return [f"⚠️ Diag: nativeLibraryDir недоступен: {e}"]
         if not lib_dir:
-            return ["⚠️ Diag: nativeLibraryDir пуст (не Android-окружение?)"]
+            lines = ["⚠️ Diag: nativeLibraryDir не определён — источники:"]
+            try:
+                from config import NATIVE_LIB_DEBUG
+                for row in list(NATIVE_LIB_DEBUG)[:6]:
+                    lines.append(f"🔎 Diag: {row}")
+            except Exception:
+                pass
+            if len(lines) == 1:
+                lines.append("🔎 Diag: ни один источник не вернул каталог")
+            return lines
         lines.append(f"🔎 Diag: nativeLibraryDir = {lib_dir}")
         try:
             entries = sorted(os.listdir(lib_dir))
@@ -390,8 +399,12 @@ class Api:
             lines.append(f"⚠️ Diag: --script проба не удалась: {type(e).__name__}: {e}")
         return lines
 
-    def start_download(self, url: str, fmt: str = "aac") -> dict:
-        """Начать загрузку одного трека/плейлиста.
+    def start_download(self, url: str, fmt: str = "aac", mode: str = None) -> dict:
+        """Начать загрузку одного трека или плейлиста.
+
+        ``mode``: "single" | "playlist" — приходит из UI-переключателя
+        («Один трек / Плейлист»). Если не передан, определяется по URL:
+        ссылка с list=/playlist считается плейлистом.
 
         Возвращает ``{"ok": True}`` или ``{"error": ...}``.
         События прогресса транслируются через ``event_callback`` в JS.
@@ -411,6 +424,14 @@ class Api:
         if fmt not in _AUDIO_FORMATS:
             fmt = "aac"
         quality = str(self._settings.get("quality", "256"))
+        # Режим из UI (PyBridge → сюда); без него — эвристика по ссылке,
+        # чтобы плейлист из 14 треков больше не скачивался как один.
+        mode = (mode or "").lower()
+        if mode not in ("single", "playlist"):
+            low = url.lower()
+            mode = ("playlist"
+                    if ("list=" in low or "playlist" in low or "/sets/" in low)
+                    else "single")
 
         self._settings["format"] = fmt
         self._settings["quality"] = quality
@@ -442,7 +463,7 @@ class Api:
 
         def _run():
             try:
-                downloader.download(url, "single", str(target_dir), quality, "ytmusic")
+                downloader.download(url, mode, str(target_dir), quality, "ytmusic")
             except Exception as e:  # pragma: no cover
                 logger.exception("Download thread crashed")
                 self._emit("done", {"ok": False, "canceled": False, "error": str(e)})

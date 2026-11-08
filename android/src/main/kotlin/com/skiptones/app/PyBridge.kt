@@ -30,9 +30,9 @@ class PyBridge(
     }
 
     @JavascriptInterface
-    fun startDownload(url: String, fmt: String): String {
+    fun startDownload(url: String, fmt: String, mode: String): String {
         return try {
-            toJson(api.callAttr("start_download", url, fmt))
+            toJson(api.callAttr("start_download", url, fmt, mode))
         } catch (e: Exception) {
             "{\"error\":\"${e.message ?: "unknown"}\"}"
         }

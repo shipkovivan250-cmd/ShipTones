@@ -95,15 +95,78 @@ except ImportError:
 #      `qjs --script file.js` — QuickJS-ng 0.12.0 поддерживает оба.
 # На десктопе хелпер возвращает {} — поведение не меняется.
 # ============================================================
+# Развёрнутая отладка последнего резолва nativeLibraryDir (Android).
+# Заполняется android_native_library_dir() и читается мобильной диагностикой.
+NATIVE_LIB_DEBUG = []
+
+
 def android_native_library_dir():
-    """Каталог распакованных native-библиотек приложения (только Chaquopy)."""
+    """Каталог распакованных native-библиотек приложения (только Chaquopy).
+
+    На ряде устройств ApplicationInfo.nativeLibraryDir приходит пустым,
+    поэтому перебираем несколько источников и возвращаем каталог, в котором
+    реально лежит libqjs.so:
+      1) Chaquopy-мост (AndroidPlatform.getApplication().getApplicationInfo());
+      2) /proc/self/maps — каталоги /data/app/…/lib/&lt;abi&gt;, где прямо сейчас
+         загружены наши .so (libpython/libchaquopy); это самый надёжный
+         источник, потому что процесс уже их загрузил;
+      3) LD_LIBRARY_PATH, если он указывает на /data/app/…/lib/&lt;abi&gt;.
+    """
+    global NATIVE_LIB_DEBUG
+    cands = []
+
+    # 1) Chaquopy-мост
     try:
         from com.chaquo.python.android import AndroidPlatform  # только Chaquopy
         info = AndroidPlatform.getApplication().getApplicationInfo()
         lib_dir = info.nativeLibraryDir
-        return str(lib_dir) if lib_dir else None
+        cands.append(("chaquopy", str(lib_dir) if lib_dir else "None (Java)"))
+    except Exception as e:
+        cands.append(("chaquopy-error", f"{type(e).__name__}: {e}"))
+
+    # 2) /proc/self/maps — реальные каталоги загруженных native-библиотек
+    try:
+        seen = set()
+        with open("/proc/self/maps", "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                i = line.rfind(" /")
+                if i == -1:
+                    continue
+                path = line[i + 1:].strip()
+                if path.startswith("/data/app") and path.endswith(".so"):
+                    d = os.path.dirname(path)
+                    if d and d not in seen:
+                        seen.add(d)
+        for d in sorted(seen):
+            cands.append(("maps", d))
+    except Exception as e:
+        cands.append(("maps-error", f"{type(e).__name__}: {e}"))
+
+    # 3) LD_LIBRARY_PATH
+    try:
+        ld = os.environ.get("LD_LIBRARY_PATH", "")
+        for p in ld.split(":"):
+            p = p.rstrip("/")
+            if p.startswith("/data/app") and p not in [c[1] for c in cands]:
+                cands.append(("ldpath", p))
     except Exception:
-        return None
+        pass
+
+    NATIVE_LIB_DEBUG = [f"источник {src}: {val}" for src, val in cands]
+
+    # Возвращаем первую директорию, где реально лежит libqjs.so;
+    # иначе — первую, похожую на native-lib каталог (с нашей или системной .so).
+    markers = ("libqjs.so", "libchaquopy_java.so", "libpython")
+    for marker in ("libqjs.so", "libchaquopy_java.so", "libpython"):
+        try:
+            for _src, d in cands:
+                if not d or "/" not in d:
+                    continue
+                if os.path.isfile(os.path.join(d, marker)):
+                    return d
+        except Exception:
+            continue
+    return None
 
 
 def js_runtime_ydl_opts() -> dict:
@@ -140,7 +203,7 @@ C_ACCENT = "#3b82f6"
 # с тем же номером (v1.2.0 и т.п.), иначе автообновление не сработает
 # и/или будет бесконечно предлагать "обновиться" на саму себя.
 # ============================================================
-APP_VERSION = "1.2.10"
+APP_VERSION = "1.2.11"
 GITHUB_REPO = "shipkovivan250-cmd/ShipTones"
 
 # ============================================================

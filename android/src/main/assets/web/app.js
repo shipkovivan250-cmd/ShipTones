@@ -183,7 +183,7 @@
     $("progress-text").textContent = "Получение информации…";
 
     try {
-      const res = await asyncApi("startDownload", url, format);
+      const res = await asyncApi("startDownload", url, format, currentMode);
       if (res && res.error) { toast(res.error, "error"); setDownloading(false); }
     } catch (e) {
       toast("Ошибка запуска загрузки", "error");
@@ -329,7 +329,7 @@
         $("url-input").value = url;
         setDownloading(true);
         try {
-          const res = await asyncApi("startDownload", url, $("format-select").value);
+          const res = await asyncApi("startDownload", url, $("format-select").value, "playlist");
           if (res && res.error) { toast(res.error, "error"); setDownloading(false); }
         } catch (e) {
           toast("Ошибка запуска", "error"); setDownloading(false);
