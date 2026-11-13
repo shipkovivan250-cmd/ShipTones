@@ -313,29 +313,11 @@ def embed_car_friendly_cover(audio_path: str, image_url: str) -> bool:
                 f"Обложка >{150}KB для {os.path.basename(audio_path)}. Пропуск.")
             return False
 
-        # --- Сохраняем обложку рядом с аудиофайлом ---
-        # Многие автомобильные магнитолы (в т.ч. LADA Granta Club / Enjoy Pro)
-        # не читают встроенные APIC-теги, но берут обложку из отдельного файла.
-        # Пишем под каноническим именем cover.jpg и под именем самого трека
-        # (<Artist> - <Title>.jpg) — старые ГУ кэшируют обложку ровно по одному
-        # из этих вариантов, поэтому пишем оба (для плейлистов last-wins в cover.jpg).
-        cover_dir = os.path.dirname(os.path.abspath(audio_path)) or "."
-        cover_candidates = [
-            os.path.join(cover_dir, "cover.jpg"),
-            os.path.splitext(audio_path)[0] + ".jpg",
-        ]
-        saved_any = False
-        for cover_path in cover_candidates:
-            try:
-                with open(cover_path, "wb") as f:
-                    f.write(jpeg_data)
-                saved_any = True
-            except Exception:
-                pass
-
-        if not saved_any:
-            logger.warning(f"Не удалось сохранить cover.jpg для {os.path.basename(audio_path)}")
-
+        # Отдельные картинки (cover.jpg / <Трек>.jpg) рядом с аудиофайлом НЕ
+        # пишем. По официальному руководству LADA EnjoY Pro c Яндекс Авто
+        # (yandex.ru/support/auto-for-lada) ММС берёт обложку из встроенного
+        # тега файла (APIC/covr) и из интернета, отдельные .jpg рядом с треком
+        # она не читает — раньше они только захламляли флешку.
         return embed_cover_jpeg(audio_path, jpeg_data)
     except Exception as e:
         logger.error(f"Ошибка обложки {os.path.basename(audio_path)}: {e}")
