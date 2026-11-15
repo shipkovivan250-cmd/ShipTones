@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -88,6 +89,15 @@ class Downloader:
                 self._notify_file_done(f)
             return
 
+        # ФИКС шума в логах: если приложение закрывают во время пост-обработки,
+        # пул потоков ронял executor.submit с полным трейсбэком
+        # (RuntimeError: cannot schedule new futures after interpreter shutdown).
+        # Теперь при отмене/завершении тихо выходим — сами треки уже на диске.
+        if self.cancel_event.is_set() or sys.meta_path is None:
+            for f in list(self.downloaded_files):
+                self._notify_file_done(f)
+            return
+
         self._log("🎨 ShipTones: Встраивание обложек для автомобильных магнитол...")
 
         video_ids_dict = {}
@@ -163,18 +173,24 @@ class Downloader:
             return cover_ok, tag_ok, error
 
         results = []
-        if len(downloaded_files) > 1:
-            # ФИКС СКОРОСТЫ: обработка обложек и тегов большого плейлиста
-            # выполнялась последовательно — после скачивания всех треков весь
-            # список треков обрабатывался в одну цепочку (сеть + mutagen).
-            # Теперь треки обрабатываются параллельно (ThreadPoolExecutor,
-            # с лимитом max_workers) — операции над разными файлами независимы.
-            workers = max(1, min(int(self.max_workers or 1), len(downloaded_files)))
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = [executor.submit(_process_one_track, f) for f in downloaded_files]
-                results = [fut.result() for fut in futures]
-        else:
-            results = [_process_one_track(f) for f in downloaded_files]
+        try:
+            if len(downloaded_files) > 1:
+                # ФИКС СКОРОСТЫ: обработка обложек и тегов большого плейлиста
+                # выполнялась последовательно — после скачивания всех треков весь
+                # список треков обрабатывался в одну цепочку (сеть + mutagen).
+                # Теперь треки обрабатываются параллельно (ThreadPoolExecutor,
+                # с лимитом max_workers) — операции над разными файлами независимы.
+                workers = max(1, min(int(self.max_workers or 1), len(downloaded_files)))
+                with ThreadPoolExecutor(max_workers=workers) as executor:
+                    futures = [executor.submit(_process_one_track, f) for f in downloaded_files]
+                    results = [fut.result() for fut in futures]
+            else:
+                results = [_process_one_track(f) for f in downloaded_files]
+        except RuntimeError as e:
+            # Interpreter shutdown / остановка приложения во время пост-обработки:
+            # треки уже скачаны, тихо выходим без трейсбэка в лог.
+            logger.info(f"Пост-обработка прервана закрытием приложения: {e}")
+            return
 
         for cover_ok, tag_ok, error in results:
             if error is not None:

@@ -195,9 +195,12 @@ class YouTubeDownloader:
             return
 
         track_id = entry.get('id')
-        artist = entry.get('artist') or entry.get('uploader', 'Unknown Artist')
-        title = entry.get('track') or entry.get('title', 'Без названия')
-        url = entry.get('webpage_url') or entry.get('url', '')
+        # None-охрана: entry.get(key) возвращает None, если ключ есть, но пуст
+        # (title=None у треков без названия) — иначе ниже падало
+        # `if " - " in title` с TypeError: argument of type 'NoneType'.
+        artist = entry.get('artist') or entry.get('uploader') or 'Unknown Artist'
+        title = entry.get('track') or entry.get('title') or 'Без названия'
+        url = entry.get('webpage_url') or entry.get('url') or ''
 
         if " - " in title:
             final_name = clean_filename(title)
