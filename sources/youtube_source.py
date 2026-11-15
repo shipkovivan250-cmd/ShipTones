@@ -269,13 +269,9 @@ class YouTubeDownloader:
                 self.parent.stats["downloaded"] += 1
                 self.parent.downloaded_files.append(file_path)
             self._log(f"✅ Готово: {final_name}")
-            # Android: мобильный бэкенд слушает file_done и тут же копирует
-            # файл в системные «Загрузки» (MediaStore). На ПК событие
-            # игнорируется (в web/app.js нет обработчика этого типа).
-            try:
-                self.parent.gui_queue.put(("file_done", file_path))
-            except Exception:
-                pass
+            # file_done отправляется НЕ здесь, а из Downloader после встраивания
+            # обложки и тегов (_process_tags_and_covers): иначе Android-бэкенд
+            # копирует в «Загрузки» файл ещё без обложки.
             final_url = f"https://www.youtube.com/watch?v={track_id}" if track_id else url
             if final_url:
                 DB.add_track(title, artist, "ytmusic", final_url, file_path)

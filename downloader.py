@@ -73,9 +73,19 @@ class Downloader:
     # ============================================================
     # ПАКЕТНАЯ ОБРАБОТКА ТЕГОВ И ОБЛОЖЕК — КАК В РАБОЧЕМ КОДЕ
     # ============================================================
+    def _notify_file_done(self, file_path):
+        """Файл полностью готов (обложка и теги записаны). Android-бэкенд
+        по этому событию копирует его в «Загрузки»; на ПК событие игнорируется."""
+        try:
+            self.gui_queue.put(("file_done", file_path))
+        except Exception:
+            pass
+
     def _process_tags_and_covers(self, playlist_dir, entries):
         if not HAS_MUTAGEN or not HAS_PIL:
             self._log("⚠️ Mutagen или Pillow не установлены. Пропуск обработки.")
+            for f in list(self.downloaded_files):
+                self._notify_file_done(f)
             return
 
         self._log("🎨 ShipTones: Встраивание обложек для автомобильных магнитол...")
@@ -149,6 +159,7 @@ class Downloader:
                 error = str(e)
                 self._log(f"⚠️ Ошибка обработки {name}: {str(e)[:50]}")
 
+            self._notify_file_done(audio_file)
             return cover_ok, tag_ok, error
 
         results = []
@@ -290,7 +301,9 @@ class Downloader:
             audio.tags.add(TCON(encoding=3, text=genre))
         if year:
             audio.tags.add(TDRC(encoding=3, text=str(year)))
-        audio.save()
+        # ID3v2.3: без v2_version=3 mutagen пересохраняет файл как v2.4 и
+        # обложка (APIC), записанная ранее в v2.3, перестаёт читаться магнитолой.
+        audio.save(v2_version=3)
         return True
 
     def _finish(self, ok, error=None, folder=None):
