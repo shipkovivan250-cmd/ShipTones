@@ -223,18 +223,16 @@ class YouTubeDownloader:
             self.parent.update_progress_bar()
             return
 
-        # Проверка дубликатов
-        if self.settings.get("smart_dedup") and DB.is_track_downloaded(url):
-            with self.parent.lock:
-                self.parent.stats["duplicates"] += 1
-            self._log(f"🔁 Дубликат: {final_name}")
-            self.parent.update_progress_bar()
-            return
-
+        # КАК В СТАРЫХ ВЕРСИЯХ: дубликат — это файл, УЖЕ ЛЕЖАЩИЙ В ЭТОЙ ЖЕ
+        # ПАПКЕ (тогда его не качаем повторно — "пропущено"). Глобальная
+        # история (shiptones.db) больше НЕ блокирует скачивание: раньше трек,
+        # скачанный когда-то в любую другую папку, навсегда помечался
+        # "дубликатом" и не попадал в новую папку (47/86 "дублей" на пустой
+        # плейлист). Теперь история используется только для информации в логе.
         # Автокаталогизация
         target_dir = playlist_dir
         if self.settings.get("auto_categorize"):
-            album = entry.get('album', '')
+            album = entry.get('album') or ''
             target_dir = os.path.join(playlist_dir,
                                       clean_filename(artist),
                                       clean_filename(album) if album else "Unknown Album")
@@ -252,6 +250,11 @@ class YouTubeDownloader:
             self._log(f"⏭ Уже есть: {final_name}")
             self.parent.update_progress_bar()
             return
+
+        # Информация из истории: трек уже скачивался ранее в другую папку —
+        # НЕ блокируем, просто помечаем в логе.
+        if self.settings.get("smart_dedup") and DB.is_track_downloaded(url):
+            self._log(f"ℹ Уже в коллекции (качаю сюда): {final_name}")
 
         self._log(f"📥 Загрузка: {final_name}")
 
