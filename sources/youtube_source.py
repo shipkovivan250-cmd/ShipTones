@@ -27,6 +27,28 @@ class _YtDlpLogAdapter:
     падения трека появляется в «Логе» вместо безликого «❌ Ошибка».
     """
 
+    # Известный шум yt-dlp, который не требует действий пользователя:
+    # деprecation-предупреждения про JS-рантайм и сообщения про
+    # решатель челленджей (yt-dlp-ejs). yt-dlp сам делает ретраи
+    # с другим набором клиентов, а реальная причина падения трека
+    # и так попадает в «❌ Ошибка …» на уровне трека.
+    _NOISE_MARKERS = (
+        "js-runtimes",
+        "js runtime",
+        "javascript runtime",
+        "signature solving failed",
+        "challenge solving failed",
+        "some formats may be missing",
+        "yt-dlp-ejs",
+        "wiki/ejs",
+        "has been deprecated",
+    )
+
+    @classmethod
+    def _is_noise(cls, msg: str) -> bool:
+        low = msg.lower()
+        return any(marker in low for marker in cls._NOISE_MARKERS)
+
     def __init__(self, log):
         self._log = log
 
@@ -43,11 +65,16 @@ class _YtDlpLogAdapter:
         # это ожидаемое поведение, а не проблема.
         if "does not exist! Continuing without ffmpeg" in msg:
             return
+        # JS-рантайм/EJS-челленджи — известный шум, не показываем.
+        if self._is_noise(msg):
+            return
         self._log(f"⚠️ yt-dlp: {msg[:300]}")
 
     def error(self, msg):
         msg = str(msg)
         if "does not exist! Continuing without ffmpeg" in msg:
+            return
+        if self._is_noise(msg):
             return
         self._log(f"❌ yt-dlp: {msg[:400]}")
 
