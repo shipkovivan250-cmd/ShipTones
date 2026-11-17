@@ -46,12 +46,10 @@ class YouTubeMusicDownloader(YouTubeDownloader):
                 # "Без ограничения" — это None (или -1); 1 оставляем только
                 # для режима "Один трек".
                 'playlistend': 1 if mode == "single" else None,
-                # ФИКС СКОРОСТЫ 2: клиенты tv_samsung/visionos не требуют
-                # GVS PO-токен — без него YouTube троттлит выдачу.
-                # Список синхронизирован с get_ydl_opts в youtube_source.
+                # КАК В v1.1.0: клиенты web/android/tv (см. youtube_source).
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['tv_samsung', 'visionos', 'web'],
+                        'player_client': ['web', 'android', 'tv'],
                     }
                 },
                 # JS-рантайм для yt-dlp >= 2025.10 (на Android — quickjs).

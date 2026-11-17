@@ -153,9 +153,13 @@ class YouTubeDownloader:
             # Клиенты 'tv_samsung' и 'visionos' PO-токен НЕ требуют (это
             # рекомендованные дефолты yt-dlp 2025.11+) — GVS URL без токена качаются
             # на полной скорости без ретраев. 'web' оставляем последним как fallback.
+            # КАК В v1.1.0: клиенты web/android/tv. Экспериментальные
+            # tv_samsung/visionos (v1.2.6+) к 2026.11 начали массово падать
+            # на прямых ссылках — из-за этого срабатывал ytsearch-фолбэк и
+            # качались «не те» треки (каверы/ремиксы по поиску).
             'extractor_args': {
                 'youtube': {
-                    'player_client': ['tv_samsung', 'visionos', 'web'],
+                    'player_client': ['web', 'android', 'tv'],
                 }
             },
             # ФИКС СКОРОСТЫ: socket_timeout=15 был слишком агрессивным для больших
@@ -417,10 +421,10 @@ class YouTubeDownloader:
                 'playlistend': 1 if mode == "single" else None,
                 # ФИКС СКОРОСТЫ: без пропуска манифестов DASH/HLS — тот же
                 # формат выбора потока, что и у скачивания (audio-only).
-                # Клиенты — как в get_ydl_opts: tv_samsung/visionos без PO-токена.
+                # Клиенты — как в get_ydl_opts: web/android/tv (v1.1.0).
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['tv_samsung', 'visionos', 'web'],
+                        'player_client': ['web', 'android', 'tv'],
                     }
                 },
                 # JS-рантайм для yt-dlp >= 2025.10 (на Android — quickjs).
