@@ -296,10 +296,11 @@ class YouTubeDownloader:
         elif url:
             success = self._try_download(url, quality, target_dir, final_name)
 
-        if not success and not self.parent.cancel_event.is_set():
-            self._log(f"🔄 Поиск: {final_name}")
-            search_query = f"ytsearch1:{artist} {title} audio"
-            success = self._try_download(search_query, quality, target_dir, final_name)
+        # КАК В v1.1.0 по результату: качаем ТОЛЬКО трек по прямой ссылке.
+        # Поиск-фолбэк ytsearch1 отключён: он подставлял первый попавшийся
+        # ролик (каверы, ремиксы, «but better»), из-за чего в папке оказывалась
+        # «шняга» вместо нужного трека. Если прямая ссылка не скачалась —
+        # честно помечаем трек ошибкой, а не подменяем его другим.
 
         if success:
             with self.parent.lock:
