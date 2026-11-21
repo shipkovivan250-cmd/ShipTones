@@ -163,9 +163,11 @@ def get_youtube_thumbnail_url(video_id: str) -> str:
     return hq_url
 
 
-def prepare_cover_jpeg(image_data: bytes, max_kb: int = 150, size=(500, 500)) -> bytes | None:
-    """Общий пайплайн обложки: обрезка по центру (ImageOps.fit) в 500×500,
-    JPEG baseline с деградацией качества до ≤ max_kb КБ.
+def prepare_cover_jpeg(image_data: bytes, max_kb: int = 45, size=(320, 320)) -> bytes | None:
+    """Общий пайплайн обложки для автомобильных ГУ (LADA EnjoY Pro и старые
+    магнитолы): обрезка по центру (ImageOps.fit) → маленький квадрат
+    320×320 → baseline JPEG (4:2:0) с деградацией качества, а если в лимит
+    не уложились — уменьшаем сторону (320 → 256 → 192). Итог ≤ max_kb КБ.
     Возвращает готовые JPEG-байты или None (Pillow не установлен, битая
     картинка или не уложились в лимит размера).
     """
@@ -178,19 +180,30 @@ def prepare_cover_jpeg(image_data: bytes, max_kb: int = 150, size=(500, 500)) ->
         # ФИКС: Image.Resampling появился только с Pillow >= 9.1 — на старых
         # версиях (например, старый Pillow в Chaquopy/Android) используем Image.LANCZOS.
         Resampling = getattr(Image, "Resampling", Image)
-        img = ImageOps.fit(img, size, Resampling.LANCZOS)
-        quality = 85
+        base_side = max(size) if size else 320
+        sides = [base_side]
+        for smaller in (256, 192, 160):
+            if smaller < base_side:
+                sides.append(smaller)
+
         jpeg_data = b""
-        while quality >= 20:
-            buf = io.BytesIO()
-            img.save(buf, format='JPEG', quality=quality, optimize=True, subsampling=2)
-            jpeg_data = buf.getvalue()
-            if len(jpeg_data) / 1024 <= max_kb:
-                break
-            quality -= 10
-        if len(jpeg_data) / 1024 > max_kb:
-            return None
-        return jpeg_data
+        for side in sides:
+            fitted = ImageOps.fit(img, (side, side), Resampling.LANCZOS)
+            quality = 80
+            while quality >= 20:
+                buf = io.BytesIO()
+                # subsampling=2 (4:2:0) — максимальная совместимость с
+                # декодерами старых ГУ; optimize уменьшает размер без потерь.
+                fitted.save(buf, format='JPEG', quality=quality,
+                            optimize=True, subsampling=2)
+                jpeg_data = buf.getvalue()
+                if len(jpeg_data) / 1024 <= max_kb:
+                    return jpeg_data
+                quality -= 10
+        if jpeg_data and len(jpeg_data) / 1024 <= max_kb:
+            return jpeg_data
+        logger.info(f"Обложка не уложилась в {max_kb} КБ — пропуск")
+        return None
     except Exception as e:
         logger.error(f"Ошибка подготовки обложки: {e}")
         return None
@@ -310,8 +323,10 @@ def embed_car_friendly_cover(audio_path: str, image_url: str) -> bool:
         jpeg_data = prepare_cover_jpeg(img_data)
         if jpeg_data is None:
             logger.warning(
-                f"Обложка >{150}KB для {os.path.basename(audio_path)}. Пропуск.")
+                f"Обложка не уложилась в лимит (≤45 КБ) для {os.path.basename(audio_path)}. Пропуск.")
             return False
+        logger.info(f"Обложка: {os.path.basename(audio_path)} — "
+                    f"{len(jpeg_data) / 1024:.0f} КБ, 320×320 JPEG")
 
         # Отдельные картинки (cover.jpg / <Трек>.jpg) рядом с аудиофайлом НЕ
         # пишем. По официальному руководству LADA EnjoY Pro c Яндекс Авто
